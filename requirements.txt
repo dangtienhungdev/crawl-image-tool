@@ -28,3 +28,7 @@ python-dotenv==1.0.0     # For environment variables
 
 # Optional: Chrome/Chromium driver management
 webdriver-manager==4.0.1
+
+# AWS S3 compatible storage (Wasabi)
+boto3==1.34.0
+botocore==1.34.0

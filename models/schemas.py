@@ -19,6 +19,7 @@ class ImageInfo(BaseModel):
     original_url: str = Field(..., description="Original URL of the image")
     local_path: str = Field(..., description="Local path where image is saved")
     filename: str = Field(..., description="Name of the saved file")
+    cloud_url: Optional[str] = Field(None, description="Cloud URL if uploaded to Wasabi S3")
     size_bytes: Optional[int] = Field(None, description="Size of the image in bytes")
     width: Optional[int] = Field(None, description="Image width in pixels")
     height: Optional[int] = Field(None, description="Image height in pixels")
@@ -32,6 +33,7 @@ class CrawlRequest(BaseModel):
     include_base64: bool = Field(default=True, description="Whether to include base64 encoded images")
     use_selenium: bool = Field(default=True, description="Whether to use Selenium for JavaScript rendering")
     custom_headers: Optional[dict] = Field(default=None, description="Custom HTTP headers")
+    image_type: str = Field(default="local", description="Storage type: 'local' or 'cloud' (Wasabi S3)")
 
 
 class CrawlResponse(BaseModel):
@@ -74,6 +76,7 @@ class MangaCrawlRequest(BaseModel):
     end_chapter: Optional[int] = Field(default=None, description="Chapter to end at (None for last available)")
     custom_headers: Optional[dict] = Field(default=None, description="Custom HTTP headers")
     delay_between_chapters: float = Field(default=2.0, description="Delay between chapter downloads (seconds)")
+    image_type: str = Field(default="local", description="Storage type: 'local' or 'cloud' (Wasabi S3)")
 
 
 class MangaCrawlResponse(BaseModel):

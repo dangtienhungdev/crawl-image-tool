@@ -75,7 +75,8 @@ class MangaController:
                     start_chapter=request.start_chapter,
                     end_chapter=request.end_chapter,
                     custom_headers=request.custom_headers,
-                    delay_between_chapters=request.delay_between_chapters
+                    delay_between_chapters=request.delay_between_chapters,
+                    image_type=request.image_type
                 )
 
                 # Calculate total images downloaded

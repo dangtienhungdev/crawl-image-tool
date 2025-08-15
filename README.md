@@ -11,6 +11,7 @@ A powerful FastAPI service for crawling and downloading images from websites wit
 - 📱 **JavaScript Rendering**: Process dynamically loaded content
 - 🎨 **Base64 Images**: Extract and save base64 encoded images
 - 📂 **Organized Storage**: Automatically save images in domain-named folders
+- ☁️ **Cloud Storage Support**: Upload images to Wasabi S3 cloud storage
 - ⚡ **Concurrent Downloads**: Fast parallel image downloading with aiohttp
 
 ### 📚 Full Manga Series Crawling
@@ -21,6 +22,7 @@ A powerful FastAPI service for crawling and downloading images from websites wit
 - 🎯 **Chapter Range Control**: Download specific chapter ranges or limits
 - ⏱️ **Rate Limiting**: Configurable delays between chapter downloads
 - 🛡️ **Hotlink Protection Bypass**: Proper Referer headers for blocked images
+- ☁️ **Cloud Storage Support**: Upload manga images to Wasabi S3 cloud storage
 
 ### 🔧 Advanced Features
 
@@ -116,6 +118,7 @@ crawl-images/
 	"max_images": 100,
 	"include_base64": true,
 	"use_selenium": true,
+	"image_type": "local",
 	"custom_headers": {
 		"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 	}
@@ -128,6 +131,7 @@ crawl-images/
 - `max_images` (optional, default: 100): Maximum number of images to download
 - `include_base64` (optional, default: true): Whether to extract base64 encoded images
 - `use_selenium` (optional, default: true): Whether to use Selenium for JavaScript rendering
+- `image_type` (optional, default: "local"): Storage type - "local" for local files, "cloud" for Wasabi S3
 - `custom_headers` (optional): Custom HTTP headers for requests
 
 **Response**:
@@ -145,6 +149,7 @@ crawl-images/
 			"original_url": "https://nettruyenvia.com/image1.jpg",
 			"local_path": "downloads/nettruyenvia_com/image1.jpg",
 			"filename": "image1.jpg",
+			"cloud_url": "https://s3.ap-southeast-1.wasabisys.com/web-truyen/images/nettruyenvia_com/image1.jpg",
 			"size_bytes": 15420,
 			"width": 800,
 			"height": 600,
@@ -182,6 +187,7 @@ crawl-images/
 	"max_chapters": 10,
 	"start_chapter": 1,
 	"end_chapter": 10,
+	"image_type": "local",
 	"delay_between_chapters": 2.0,
 	"custom_headers": {
 		"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -195,6 +201,7 @@ crawl-images/
 - `max_chapters` (optional): Maximum number of chapters to download
 - `start_chapter` (optional, default: 1): Chapter to start from
 - `end_chapter` (optional): Chapter to end at
+- `image_type` (optional, default: "local"): Storage type - "local" for local files, "cloud" for Wasabi S3
 - `delay_between_chapters` (optional, default: 2.0): Delay between downloads
 - `custom_headers` (optional): Custom HTTP headers
 
@@ -277,6 +284,20 @@ export PORT=8000             # Server port (default: 8000)
 export RELOAD=true           # Auto-reload on code changes (default: true)
 ```
 
+### Wasabi S3 Cloud Storage Configuration
+
+To enable cloud storage functionality, configure the following environment variables in your `.env` file:
+
+```bash
+# Wasabi S3 Configuration
+ACCESS_KEY=your_wasabi_access_key
+SECRET_KEY=your_wasabi_secret_key
+ENDPOINT_URL=https://s3.ap-southeast-1.wasabisys.com
+BUCKET_NAME=your_bucket_name
+```
+
+**Note**: The system will automatically fall back to local storage if Wasabi configuration is missing or invalid.
+
 ### Chrome/Selenium Configuration
 
 The Selenium WebDriver is configured with optimal settings:
@@ -336,15 +357,30 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
 ## 📝 Example Usage with cURL
 
 ```bash
-# Crawl images from a website
+# Crawl images from a website (local storage)
 curl -X POST "http://localhost:8000/api/v1/crawl" \
      -H "Content-Type: application/json" \
      -d '{
        "url": "https://nettruyenvia.com/",
        "max_images": 50,
        "include_base64": true,
-       "use_selenium": true
+       "use_selenium": true,
+       "image_type": "local"
      }'
+
+# Crawl images from a website (cloud storage)
+curl -X POST "http://localhost:8000/api/v1/crawl" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "url": "https://nettruyenvia.com/",
+       "max_images": 50,
+       "include_base64": true,
+       "use_selenium": true,
+       "image_type": "cloud"
+     }'
+
+# Test Wasabi S3 connection
+curl -X GET "http://localhost:8000/api/v1/wasabi-test"
 
 # Health check
 curl -X GET "http://localhost:8000/api/v1/health"
@@ -356,18 +392,40 @@ curl -X GET "http://localhost:8000/api/v1/health"
 import requests
 import json
 
-# Crawl images
+# Crawl images (local storage)
 response = requests.post('http://localhost:8000/api/v1/crawl',
     json={
         'url': 'https://nettruyenvia.com/',
         'max_images': 50,
         'include_base64': True,
-        'use_selenium': True
+        'use_selenium': True,
+        'image_type': 'local'
     }
 )
 
 result = response.json()
 print(f"Downloaded {result['images_downloaded']} images to {result['folder_path']}")
+
+# Crawl images (cloud storage)
+response = requests.post('http://localhost:8000/api/v1/crawl',
+    json={
+        'url': 'https://nettruyenvia.com/',
+        'max_images': 50,
+        'include_base64': True,
+        'use_selenium': True,
+        'image_type': 'cloud'
+    }
+)
+
+result = response.json()
+print(f"Downloaded {result['images_downloaded']} images")
+for image in result['images']:
+    if image.get('cloud_url'):
+        print(f"Cloud URL: {image['cloud_url']}")
+
+# Test Wasabi connection
+response = requests.get('http://localhost:8000/api/v1/wasabi-test')
+print(response.json())
 ```
 
 ## 🤝 Contributing

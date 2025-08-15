@@ -53,7 +53,8 @@ class ImageController:
                     max_images=request.max_images,
                     include_base64=request.include_base64,
                     use_selenium=request.use_selenium,
-                    custom_headers=request.custom_headers
+                    custom_headers=request.custom_headers,
+                    image_type=request.image_type
                 )
 
                 # Create response

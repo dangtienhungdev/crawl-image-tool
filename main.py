@@ -9,6 +9,10 @@ from contextlib import asynccontextmanager
 import uvicorn
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 from routes.image_routes import router as image_router
 from routes.manga_routes import router as manga_router

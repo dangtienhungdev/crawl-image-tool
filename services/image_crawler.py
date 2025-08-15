@@ -25,6 +25,7 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 from PIL import Image
 
 from models.schemas import ImageInfo, CrawlStatus
+from services.wasabi_service import WasabiService
 
 
 class ImageCrawlerService:
@@ -64,8 +65,8 @@ class ImageCrawlerService:
         folder_name = re.sub(r'[^\w\-_.]', '_', domain)
         folder_path = os.path.join('downloads', folder_name)
 
-        # Create directory if it doesn't exist
-        Path(folder_path).mkdir(parents=True, exist_ok=True)
+        # Create directory if it doesn't exist (only for local storage)
+        # Note: This is called during setup, actual folder creation is handled in crawl_images
 
         return domain, folder_path
 
@@ -228,7 +229,7 @@ class ImageCrawlerService:
 
         return list(set(image_urls))
 
-    async def _download_image(self, url: str, folder_path: str, session: aiohttp.ClientSession, base_url: str = None) -> Optional[ImageInfo]:
+    async def _download_image(self, url: str, folder_path: str, session: aiohttp.ClientSession, base_url: str = None, wasabi_service: WasabiService = None, image_type: str = "local", manga_folder_path: str = None) -> Optional[ImageInfo]:
         """
         Download a single image from URL with anti-blocking measures
 
@@ -330,10 +331,59 @@ class ImageCrawlerService:
                                     filename = f"{url_hash}.jpg"
 
                             filepath = os.path.join(folder_path, filename)
+                            cloud_url = None
 
-                            # Save image
-                            async with aiofiles.open(filepath, 'wb') as f:
-                                await f.write(content)
+                            # Handle storage based on image_type
+                            if image_type == "cloud" and wasabi_service:
+                                # Cloud storage: Upload directly to Wasabi, don't save locally
+                                try:
+                                    # Generate S3 key based on folder structure
+                                    if manga_folder_path:
+                                        # For manga: manga_title/Chapter_X/filename
+                                        manga_folder_name = os.path.basename(manga_folder_path)
+                                        chapter_folder_name = os.path.basename(folder_path)
+                                        s3_key = f"{manga_folder_name}/{chapter_folder_name}/{filename}"
+                                    else:
+                                        # For single page crawl: images/domain_name/filename
+                                        s3_key = f"images/{os.path.basename(folder_path)}/{filename}"
+
+                                    # Determine content type
+                                    content_type = None
+                                    if format_type in ['jpeg', 'jpg']:
+                                        content_type = 'image/jpeg'
+                                    elif format_type == 'png':
+                                        content_type = 'image/png'
+                                    elif format_type == 'gif':
+                                        content_type = 'image/gif'
+                                    elif format_type == 'webp':
+                                        content_type = 'image/webp'
+
+                                    # Upload bytes directly to Wasabi (no local file)
+                                    success, cloud_url, error = wasabi_service.upload_bytes(content, s3_key, content_type)
+
+                                    if success:
+                                        print(f"☁️ Uploaded to cloud: {cloud_url}")
+                                        # For cloud storage, keep original filepath for local_path field but don't save locally
+                                    else:
+                                        print(f"⚠️ Cloud upload failed: {error}")
+                                        cloud_url = None
+                                        # Fallback to local if cloud upload fails
+                                        async with aiofiles.open(filepath, 'wb') as f:
+                                            await f.write(content)
+                                        print(f"💾 Fallback: Saved locally due to cloud upload failure")
+
+                                except Exception as e:
+                                    print(f"⚠️ Cloud upload error: {str(e)}")
+                                    cloud_url = None
+                                    # Fallback to local if cloud upload fails
+                                    async with aiofiles.open(filepath, 'wb') as f:
+                                        await f.write(content)
+                                    print(f"💾 Fallback: Saved locally due to cloud upload error")
+                            else:
+                                # Local storage: Save to local filesystem
+                                async with aiofiles.open(filepath, 'wb') as f:
+                                    await f.write(content)
+
 
                             self.downloaded_urls.add(url)
 
@@ -343,6 +393,7 @@ class ImageCrawlerService:
                                 original_url=url,
                                 local_path=filepath,
                                 filename=filename,
+                                cloud_url=cloud_url,
                                 size_bytes=len(content),
                                 width=width,
                                 height=height,
@@ -373,7 +424,7 @@ class ImageCrawlerService:
             print(f"Error downloading {url}: {str(e)}")
             return None
 
-    async def _save_base64_image(self, base64_data: str, format_type: str, folder_path: str, index: int) -> Optional[ImageInfo]:
+    async def _save_base64_image(self, base64_data: str, format_type: str, folder_path: str, index: int, wasabi_service: WasabiService = None, image_type: str = "local", manga_folder_path: str = None) -> Optional[ImageInfo]:
         """
         Save base64 encoded image to disk
 
@@ -394,9 +445,59 @@ class ImageCrawlerService:
             filename = f"base64_image_{index}.{format_type}"
             filepath = os.path.join(folder_path, filename)
 
-            # Save image
-            async with aiofiles.open(filepath, 'wb') as f:
-                await f.write(image_data)
+            cloud_url = None
+
+            # Handle storage based on image_type
+            if image_type == "cloud" and wasabi_service:
+                # Cloud storage: Upload directly to Wasabi, don't save locally
+                try:
+                    # Generate S3 key for base64 image
+                    if manga_folder_path:
+                        # For manga: manga_title/Chapter_X/filename
+                        manga_folder_name = os.path.basename(manga_folder_path)
+                        chapter_folder_name = os.path.basename(folder_path)
+                        s3_key = f"{manga_folder_name}/{chapter_folder_name}/{filename}"
+                    else:
+                        # For single page crawl: images/domain_name/filename
+                        s3_key = f"images/{os.path.basename(folder_path)}/{filename}"
+
+                    # Determine content type
+                    content_type = None
+                    if format_type in ['jpeg', 'jpg']:
+                        content_type = 'image/jpeg'
+                    elif format_type == 'png':
+                        content_type = 'image/png'
+                    elif format_type == 'gif':
+                        content_type = 'image/gif'
+                    elif format_type == 'webp':
+                        content_type = 'image/webp'
+
+                    # Upload bytes directly to Wasabi (no local file)
+                    success, cloud_url, error = wasabi_service.upload_bytes(image_data, s3_key, content_type)
+
+                    if success:
+                        print(f"☁️ Uploaded base64 image to cloud: {cloud_url}")
+                        # For cloud storage, keep original filepath for local_path field but don't save locally
+                    else:
+                        print(f"⚠️ Cloud upload failed for base64 image: {error}")
+                        cloud_url = None
+                        # Fallback to local if cloud upload fails
+                        async with aiofiles.open(filepath, 'wb') as f:
+                            await f.write(image_data)
+                        print(f"💾 Fallback: Saved base64 image locally due to cloud upload failure")
+
+                except Exception as e:
+                    print(f"⚠️ Cloud upload error for base64 image: {str(e)}")
+                    cloud_url = None
+                    # Fallback to local if cloud upload fails
+                    async with aiofiles.open(filepath, 'wb') as f:
+                        await f.write(image_data)
+                    print(f"💾 Fallback: Saved base64 image locally due to cloud upload error")
+            else:
+                # Local storage: Save to local filesystem
+                async with aiofiles.open(filepath, 'wb') as f:
+                    await f.write(image_data)
+
 
             # Get image info
             try:
@@ -409,6 +510,7 @@ class ImageCrawlerService:
                 original_url=f"data:image/{format_type};base64,{base64_data[:50]}...",
                 local_path=filepath,
                 filename=filename,
+                cloud_url=cloud_url,
                 size_bytes=len(image_data),
                 width=width,
                 height=height,
@@ -425,7 +527,8 @@ class ImageCrawlerService:
         max_images: int = 100,
         include_base64: bool = True,
         use_selenium: bool = True,
-        custom_headers: Optional[dict] = None
+        custom_headers: Optional[dict] = None,
+        image_type: str = "local"
     ) -> Tuple[CrawlStatus, str, str, int, List[ImageInfo], List[str], float]:
         """
         Main method to crawl images from a website
@@ -447,6 +550,13 @@ class ImageCrawlerService:
         try:
             # Setup
             domain, folder_path = self._get_domain_folder(url)
+
+            # Create folder for downloads (only for local storage)
+            if image_type != "cloud":
+                Path(folder_path).mkdir(parents=True, exist_ok=True)
+                print(f"📁 Created local folder: {folder_path}")
+            else:
+                print(f"☁️ Cloud storage mode: No local folder created")
 
             # Initialize session
             if not self.session:
@@ -516,10 +626,21 @@ class ImageCrawlerService:
                 image_urls = image_urls[:max_images]
                 base64_images = base64_images[:max(0, max_images - len(image_urls))]
 
+            # Initialize Wasabi service if cloud storage is requested
+            wasabi_service = None
+            if image_type == "cloud":
+                try:
+                    wasabi_service = WasabiService()
+                    print("☁️ Cloud storage (Wasabi S3) enabled")
+                except Exception as e:
+                    errors.append(f"Failed to initialize Wasabi service: {str(e)}")
+                    print(f"⚠️ Falling back to local storage: {str(e)}")
+                    image_type = "local"
+
             # Download regular images concurrently
             download_tasks = []
             for img_url in image_urls:
-                task = self._download_image(img_url, folder_path, self.session, url)
+                task = self._download_image(img_url, folder_path, self.session, url, wasabi_service, image_type)
                 download_tasks.append(task)
 
             # Execute downloads concurrently
@@ -534,7 +655,7 @@ class ImageCrawlerService:
 
             # Save base64 images
             for i, (base64_data, format_type) in enumerate(base64_images):
-                base64_info = await self._save_base64_image(base64_data, format_type, folder_path, i)
+                base64_info = await self._save_base64_image(base64_data, format_type, folder_path, i, wasabi_service, image_type, None)  # No manga folder for single page crawl
                 if base64_info:
                     images_info.append(base64_info)
 

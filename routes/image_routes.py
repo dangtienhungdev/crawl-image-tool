@@ -120,4 +120,46 @@ async def health_check() -> Dict[str, str]:
         )
 
 
+@router.get(
+    "/wasabi-test",
+    summary="Test Wasabi S3 connection",
+    description="Test the connection to Wasabi S3 cloud storage",
+    responses={
+        200: {"description": "Wasabi connection test result"},
+        500: {"model": ErrorResponse, "description": "Connection test failed"}
+    }
+)
+async def test_wasabi_connection() -> Dict[str, Any]:
+    """
+    Test Wasabi S3 connection
+
+    Returns:
+        Dictionary with connection test results
+    """
+    try:
+        from services.wasabi_service import WasabiService
+        wasabi = WasabiService()
+        success, error = wasabi.test_connection()
+
+        if success:
+            return {
+                "status": "success",
+                "message": "Wasabi S3 connection successful",
+                "bucket": wasabi.bucket_name,
+                "endpoint": wasabi.endpoint_url
+            }
+        else:
+            return {
+                "status": "error",
+                "message": f"Wasabi S3 connection failed: {error}",
+                "bucket": wasabi.bucket_name,
+                "endpoint": wasabi.endpoint_url
+            }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to initialize Wasabi service: {str(e)}"
+        }
+
+
 # Note: Exception handlers are defined in main.py since APIRouter doesn't support them

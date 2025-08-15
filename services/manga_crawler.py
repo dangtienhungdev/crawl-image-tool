@@ -29,6 +29,7 @@ class MangaCrawlerService:
     def __init__(self):
         self.session: Optional[aiohttp.ClientSession] = None
         self.image_crawler = ImageCrawlerService()
+        self.wasabi_service = None
 
     async def __aenter__(self):
         """Async context manager entry"""
@@ -311,7 +312,8 @@ class MangaCrawlerService:
         chapter_title: str,
         chapter_url: str,
         manga_folder: str,
-        custom_headers: Optional[dict] = None
+        custom_headers: Optional[dict] = None,
+        image_type: str = "local"
     ) -> ChapterInfo:
         """
         Download all images from a single chapter
@@ -328,7 +330,10 @@ class MangaCrawlerService:
         """
         start_time = time.time()
         chapter_folder = os.path.join(manga_folder, f"Chapter_{chapter_number}")
-        Path(chapter_folder).mkdir(parents=True, exist_ok=True)
+
+        # Only create local folder if not using cloud storage
+        if image_type != "cloud":
+            Path(chapter_folder).mkdir(parents=True, exist_ok=True)
 
         print(f"📖 Processing Chapter {chapter_number}: {chapter_title}")
 
@@ -363,21 +368,32 @@ class MangaCrawlerService:
                         url=img_url,
                         folder_path=chapter_folder,
                         session=self.session,
-                        base_url=chapter_url  # Use chapter URL as referer
+                        base_url=chapter_url,  # Use chapter URL as referer
+                        wasabi_service=self.wasabi_service if hasattr(self, 'wasabi_service') else None,
+                        image_type=image_type,
+                        manga_folder_path=manga_folder  # Pass manga folder for proper S3 structure
                     )
 
                     if image_info:
-                        # Rename to sequential filename
-                        old_path = image_info.local_path
-                        new_path = os.path.join(chapter_folder, filename)
-
-                        if old_path != new_path:
-                            os.rename(old_path, new_path)
-                            image_info.local_path = new_path
+                        # Handle file renaming based on storage type
+                        if image_type == "cloud":
+                            # For cloud storage, just update the filename in the ImageInfo
+                            # No need to rename local files since they don't exist
                             image_info.filename = filename
+                            print(f"   ✅ Downloaded {i}/{len(image_urls)}: {filename} (cloud)")
+                        else:
+                            # For local storage, rename the actual file
+                            old_path = image_info.local_path
+                            new_path = os.path.join(chapter_folder, filename)
+
+                            if old_path != new_path:
+                                os.rename(old_path, new_path)
+                                image_info.local_path = new_path
+                                image_info.filename = filename
+
+                            print(f"   ✅ Downloaded {i}/{len(image_urls)}: {filename} (local)")
 
                         downloaded_images.append(image_info)
-                        print(f"   ✅ Downloaded {i}/{len(image_urls)}: {filename}")
                     else:
                         errors.append(f"Failed to download image {i}: {img_url}")
                         print(f"   ❌ Failed {i}/{len(image_urls)}: {img_url}")
@@ -421,7 +437,8 @@ class MangaCrawlerService:
         start_chapter: Optional[int] = None,
         end_chapter: Optional[int] = None,
         custom_headers: Optional[dict] = None,
-        delay_between_chapters: float = 2.0
+        delay_between_chapters: float = 2.0,
+        image_type: str = "local"
     ) -> Tuple[CrawlStatus, str, str, int, List[ChapterInfo], List[str], float]:
         """
         Crawl entire manga series
@@ -443,6 +460,17 @@ class MangaCrawlerService:
         try:
             print(f"🚀 Starting manga crawl: {manga_url}")
 
+            # Initialize Wasabi service if cloud storage is requested
+            if image_type == "cloud":
+                try:
+                    from services.wasabi_service import WasabiService
+                    self.wasabi_service = WasabiService()
+                    print("☁️ Cloud storage (Wasabi S3) enabled for manga crawl")
+                except Exception as e:
+                    errors.append(f"Failed to initialize Wasabi service: {str(e)}")
+                    print(f"⚠️ Falling back to local storage: {str(e)}")
+                    image_type = "local"
+
             # Get manga info and chapter list
             headers = custom_headers or {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -457,10 +485,16 @@ class MangaCrawlerService:
 
             print(f"📚 Manga: {manga_title}")
 
-            # Create manga folder
+            # Create manga folder (only for local storage)
             sanitized_title = self._sanitize_folder_name(manga_title)
             manga_folder = os.path.join('downloads', sanitized_title)
-            Path(manga_folder).mkdir(parents=True, exist_ok=True)
+
+            # Only create local folder if not using cloud storage
+            if image_type != "cloud":
+                Path(manga_folder).mkdir(parents=True, exist_ok=True)
+                print(f"📁 Created local folder: {manga_folder}")
+            else:
+                print(f"☁️ Cloud storage mode: No local folder created")
 
             # Get chapter list
             all_chapters = await self._get_chapter_list(manga_url, custom_headers)
@@ -543,7 +577,8 @@ class MangaCrawlerService:
                     chapter_title=chapter_title,
                     chapter_url=chapter_url,
                     manga_folder=manga_folder,
-                    custom_headers=custom_headers
+                    custom_headers=custom_headers,
+                    image_type=image_type
                 )
 
                 downloaded_chapters.append(chapter_info)
