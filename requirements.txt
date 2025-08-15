@@ -1,0 +1,30 @@
+# FastAPI and web server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# HTTP client and async support
+aiohttp==3.9.1
+aiofiles==23.2.0
+
+# Web scraping and HTML parsing
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
+# Browser automation for JavaScript-rendered content
+selenium==4.15.2
+
+# Image processing
+Pillow==10.1.0
+
+# Data validation and serialization
+pydantic==2.5.0
+
+# HTTP requests (fallback/compatibility)
+requests==2.31.0
+
+# Additional utilities
+python-multipart==0.0.6  # For form data handling
+python-dotenv==1.0.0     # For environment variables
+
+# Optional: Chrome/Chromium driver management
+webdriver-manager==4.0.1
