@@ -91,3 +91,39 @@ class MangaCrawlResponse(BaseModel):
     chapters: List[ChapterInfo] = Field(..., description="List of processed chapters")
     errors: List[str] = Field(default_factory=list, description="Global errors encountered")
     processing_time_seconds: float = Field(..., description="Total time taken to process the manga")
+
+
+class MangaListCrawlRequest(BaseModel):
+    """Request model for crawling manga list page"""
+    url: HttpUrl = Field(..., description="URL of the manga list page (e.g., https://nettruyenvia.com/?page=637)")
+    max_manga: Optional[int] = Field(default=None, description="Maximum number of manga to crawl (None for all)")
+    max_chapters_per_manga: Optional[int] = Field(default=None, description="Maximum chapters per manga (None for all)")
+    image_type: str = Field(default="local", description="Storage type: 'local' or 'cloud' (Wasabi S3)")
+    delay_between_manga: float = Field(default=3.0, description="Delay between manga downloads (seconds)")
+    delay_between_chapters: float = Field(default=2.0, description="Delay between chapter downloads (seconds)")
+    custom_headers: Optional[dict] = Field(default=None, description="Custom HTTP headers")
+
+
+class MangaListInfo(BaseModel):
+    """Information about a manga from the list"""
+    manga_url: str = Field(..., description="URL of the manga series page")
+    manga_title: str = Field(..., description="Title of the manga series")
+    manga_folder: str = Field(..., description="Folder path for the manga")
+    total_chapters: int = Field(..., description="Total number of chapters found")
+    chapters_downloaded: int = Field(..., description="Number of chapters successfully downloaded")
+    total_images_downloaded: int = Field(..., description="Total number of images downloaded")
+    status: str = Field(..., description="Status: 'success', 'partial', 'failed'")
+    processing_time_seconds: float = Field(..., description="Time taken to process this manga")
+    errors: List[str] = Field(default_factory=list, description="List of errors encountered")
+
+
+class MangaListCrawlResponse(BaseModel):
+    """Response model for manga list crawling"""
+    status: CrawlStatus = Field(..., description="Overall status: 'success', 'partial', 'failed'")
+    list_url: str = Field(..., description="URL of the manga list page")
+    total_manga_found: int = Field(..., description="Total number of manga found on the page")
+    manga_processed: int = Field(..., description="Number of manga successfully processed")
+    total_images_downloaded: int = Field(..., description="Total images downloaded across all manga")
+    manga_list: List[MangaListInfo] = Field(..., description="List of processed manga with details")
+    errors: List[str] = Field(default_factory=list, description="List of general errors")
+    processing_time_seconds: float = Field(..., description="Total processing time")

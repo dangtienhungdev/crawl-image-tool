@@ -2,6 +2,9 @@
 Main FastAPI application for Image Crawler service
 """
 
+from routes.manga_list_routes import manga_list_router
+from routes.manga_routes import router as manga_router
+from routes.image_routes import router as image_router
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -13,9 +16,6 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-
-from routes.image_routes import router as image_router
-from routes.manga_routes import router as manga_router
 
 
 # Create downloads directory if it doesn't exist
@@ -93,6 +93,7 @@ app.add_middleware(
 # Include routers
 app.include_router(image_router)
 app.include_router(manga_router)
+app.include_router(manga_list_router)
 
 
 @app.get("/", tags=["Root"])
@@ -112,6 +113,7 @@ async def root():
             "health_check": "GET /api/v1/health",
             "crawl_manga": "POST /api/v1/manga/crawl",
             "manga_info": "GET /api/v1/manga/info",
+            "crawl_manga_list": "POST /api/v1/manga-list/crawl",
             "manga_health": "GET /api/v1/manga/health",
             "manga_examples": "GET /api/v1/manga/examples"
         }

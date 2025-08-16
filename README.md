@@ -24,6 +24,15 @@ A powerful FastAPI service for crawling and downloading images from websites wit
 - 🛡️ **Hotlink Protection Bypass**: Proper Referer headers for blocked images
 - ☁️ **Cloud Storage Support**: Upload manga images to Wasabi S3 cloud storage
 
+### 📋 Manga List Batch Crawling
+
+- 📚 **Batch Processing**: Crawl entire pages of manga lists (e.g., https://nettruyenvia.com/?page=637)
+- 🔄 **Automatic Discovery**: Extract all manga URLs from list pages automatically
+- ⚙️ **Configurable Limits**: Set limits for manga count and chapters per manga
+- 🕐 **Smart Delays**: Configurable delays between manga and chapter downloads
+- 📊 **Comprehensive Reporting**: Detailed statistics for each manga processed
+- ☁️ **Cloud Storage Support**: Upload all manga images to Wasabi S3 cloud storage
+
 ### 🔧 Advanced Features
 
 - 🛡️ **Robust Error Handling**: Comprehensive error reporting and recovery
@@ -222,6 +231,81 @@ downloads/
         └── ...
 ```
 
+### Crawl Manga List Page (Batch Processing)
+
+**Endpoint**: `POST /api/v1/manga-list/crawl`
+
+**Request Body**:
+
+```json
+{
+	"url": "https://nettruyenvia.com/?page=637",
+	"max_manga": 5,
+	"max_chapters_per_manga": 3,
+	"image_type": "cloud",
+	"delay_between_manga": 3.0,
+	"delay_between_chapters": 2.0,
+	"custom_headers": {
+		"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+	}
+}
+```
+
+**Parameters**:
+
+- `url` (required): URL of the manga list page (e.g., https://nettruyenvia.com/?page=637)
+- `max_manga` (optional): Maximum number of manga to process (None for all)
+- `max_chapters_per_manga` (optional): Maximum chapters per manga (None for all)
+- `image_type` (optional, default: "local"): Storage type - "local" for local files, "cloud" for Wasabi S3
+- `delay_between_manga` (optional, default: 3.0): Delay between manga downloads (seconds)
+- `delay_between_chapters` (optional, default: 2.0): Delay between chapter downloads (seconds)
+- `custom_headers` (optional): Custom HTTP headers
+
+**Response**:
+
+```json
+{
+	"status": "success",
+	"list_url": "https://nettruyenvia.com/?page=637",
+	"total_manga_found": 20,
+	"manga_processed": 5,
+	"total_images_downloaded": 150,
+	"manga_list": [
+		{
+			"manga_url": "https://nettruyenvia.com/truyen-tranh/manga-1",
+			"manga_title": "Manga Title 1",
+			"manga_folder": "downloads/Manga_Title_1",
+			"total_chapters": 10,
+			"chapters_downloaded": 3,
+			"total_images_downloaded": 30,
+			"status": "success",
+			"processing_time_seconds": 45.2,
+			"errors": []
+		}
+	],
+	"errors": [],
+	"processing_time_seconds": 180.5
+}
+```
+
+**Example Folder Structure**:
+
+```
+downloads/
+├── Manga_Title_1/
+│   ├── Chapter_1/
+│   │   ├── 001.jpg
+│   │   └── 002.jpg
+│   └── Chapter_2/
+│       ├── 001.jpg
+│       └── 002.jpg
+├── Manga_Title_2/
+│   └── Chapter_1/
+│       ├── 001.jpg
+│       └── 002.jpg
+└── ...
+```
+
 ### Get Manga Information
 
 **Endpoint**: `GET /api/v1/manga/info?url={manga_url}`
@@ -384,6 +468,18 @@ curl -X GET "http://localhost:8000/api/v1/wasabi-test"
 
 # Health check
 curl -X GET "http://localhost:8000/api/v1/health"
+
+# Crawl manga list page (batch processing)
+curl -X POST "http://localhost:8000/api/v1/manga-list/crawl" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "url": "https://nettruyenvia.com/?page=637",
+       "max_manga": 3,
+       "max_chapters_per_manga": 2,
+       "image_type": "local",
+       "delay_between_manga": 3.0,
+       "delay_between_chapters": 2.0
+     }'
 ```
 
 ## 📝 Example Usage with Python
@@ -426,6 +522,24 @@ for image in result['images']:
 # Test Wasabi connection
 response = requests.get('http://localhost:8000/api/v1/wasabi-test')
 print(response.json())
+
+# Crawl manga list page (batch processing)
+response = requests.post('http://localhost:8000/api/v1/manga-list/crawl',
+    json={
+        'url': 'https://nettruyenvia.com/?page=637',
+        'max_manga': 3,
+        'max_chapters_per_manga': 2,
+        'image_type': 'local',
+        'delay_between_manga': 3.0,
+        'delay_between_chapters': 2.0
+    }
+)
+
+result = response.json()
+print(f"Processed {result['manga_processed']} manga")
+print(f"Total images: {result['total_images_downloaded']}")
+for manga in result['manga_list']:
+    print(f"- {manga['manga_title']}: {manga['total_images_downloaded']} images")
 ```
 
 ## 🤝 Contributing
