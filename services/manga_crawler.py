@@ -95,7 +95,7 @@ class MangaCrawlerService:
 
     async def _get_chapter_list(self, manga_url: str, custom_headers: Optional[dict] = None) -> List[Tuple[str, str, str]]:
         """
-        Get list of all chapters from manga page
+        Get list of all chapters from manga page using direct API call
 
         Args:
             manga_url: URL of the manga series page
@@ -104,6 +104,268 @@ class MangaCrawlerService:
         Returns:
             List of tuples (chapter_number, chapter_title, chapter_url)
         """
+        print(f"🔍 Getting chapter list from: {manga_url}")
+
+        try:
+            # Try direct API call first (most efficient)
+            chapters = await self._get_chapter_list_with_api(manga_url, custom_headers)
+
+            if chapters:
+                print(
+                    f"✅ Found {len(chapters)} chapters using direct API call")
+                return chapters
+            else:
+                print("⚠️ No chapters found with API, trying HTTP method...")
+                return await self._get_chapter_list_with_http(manga_url, custom_headers)
+
+        except Exception as e:
+            print(f"❌ Error getting chapter list with API: {str(e)}")
+            print("🔄 Falling back to HTTP method...")
+            return await self._get_chapter_list_with_http(manga_url, custom_headers)
+
+    async def _get_chapter_list_with_api(self, manga_url: str, custom_headers: Optional[dict] = None) -> List[Tuple[str, str, str]]:
+        """
+        Get chapter list using direct API call to ComicService.asmx/ChapterList
+        """
+        try:
+            # Extract manga slug from URL
+            # URL format: https://nettruyenvia.com/truyen-tranh/manga-slug
+            manga_slug = manga_url.rstrip('/').split('/')[-1]
+
+            # API endpoint
+            api_url = f"https://nettruyenvia.com/Comic/Services/ComicService.asmx/ChapterList?slug={manga_slug}"
+
+            print(f"🔗 Calling API: {api_url}")
+
+            headers = custom_headers or {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Referer': manga_url,
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+
+            async with self.session.get(api_url, headers=headers, timeout=30) as response:
+                if response.status != 200:
+                    print(f"❌ API request failed: HTTP {response.status}")
+                    return []
+
+                try:
+                    api_data = await response.json()
+                except Exception as e:
+                    print(f"❌ Failed to parse API response as JSON: {str(e)}")
+                    return []
+
+                # Parse API response
+                chapters = []
+
+                if 'data' in api_data and isinstance(api_data['data'], list):
+                    print(f"📊 API returned {len(api_data['data'])} chapters")
+
+                    for chapter_data in api_data['data']:
+                        try:
+                            chapter_num = str(
+                                chapter_data.get('chapter_num', ''))
+                            chapter_name = chapter_data.get(
+                                'chapter_name', f'Chapter {chapter_num}')
+                            chapter_slug = chapter_data.get('chapter_slug', '')
+
+                            # Construct chapter URL
+                            chapter_url = f"{manga_url.rstrip('/')}/{chapter_slug}"
+
+                            if chapter_num and chapter_url:
+                                chapters.append(
+                                    (chapter_num, chapter_name, chapter_url))
+
+                        except Exception as e:
+                            print(f"⚠️ Error parsing chapter data: {str(e)}")
+                            continue
+
+                    # Sort chapters by chapter number (ascending order)
+                    try:
+                        chapters.sort(key=lambda x: float(
+                            x[0]) if x[0].replace('.', '').isdigit() else 0)
+                    except Exception as e:
+                        print(f"⚠️ Error sorting chapters: {str(e)}")
+
+                    print(
+                        f"✅ Successfully parsed {len(chapters)} chapters from API")
+                    return chapters
+
+                else:
+                    print("❌ Invalid API response format")
+                    return []
+
+        except Exception as e:
+            print(f"❌ Error in API chapter extraction: {str(e)}")
+            return []
+
+    async def _get_chapter_list_with_selenium(self, manga_url: str, custom_headers: Optional[dict] = None) -> List[Tuple[str, str, str]]:
+        """
+        Get chapter list using Selenium to handle "xem thêm" button
+        """
+        driver = None
+        try:
+            # Setup Chrome options
+            chrome_options = Options()
+            chrome_options.add_argument('--headless')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--window-size=1920,1080')
+            chrome_options.add_argument(
+                '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+
+            # Add custom headers if provided
+            if custom_headers:
+                for key, value in custom_headers.items():
+                    chrome_options.add_argument(f'--header={key}: {value}')
+
+            # Initialize WebDriver
+            from selenium.webdriver.chrome.service import Service
+            from webdriver_manager.chrome import ChromeDriverManager
+
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+
+            print(f"🌐 Loading page: {manga_url}")
+            driver.get(manga_url)
+
+            # Wait for page to load
+            await asyncio.sleep(3)
+
+            # Try to click "xem thêm" button multiple times
+            max_attempts = 10
+            attempt = 0
+
+            while attempt < max_attempts:
+                attempt += 1
+                print(
+                    f"🔄 Attempt {attempt}/{max_attempts}: Looking for 'xem thêm' button...")
+
+                # Try different selectors for "xem thêm" button
+                button_selectors = [
+                    "//button[contains(text(), 'xem thêm')]",
+                    "//button[contains(text(), 'Xem thêm')]",
+                    "//button[contains(text(), 'Xem Thêm')]",
+                    "//a[contains(text(), 'xem thêm')]",
+                    "//a[contains(text(), 'Xem thêm')]",
+                    "//a[contains(text(), 'Xem Thêm')]",
+                    "//button[contains(@class, 'load-more')]",
+                    "//button[contains(@class, 'show-more')]",
+                    "//a[contains(@class, 'load-more')]",
+                    "//a[contains(@class, 'show-more')]",
+                    "//button[contains(@id, 'load-more')]",
+                    "//button[contains(@id, 'show-more')]",
+                    ".load-more",
+                    ".show-more",
+                    "#load-more",
+                    "#show-more"
+                ]
+
+                button_found = False
+                for selector in button_selectors:
+                    try:
+                        if selector.startswith("//"):
+                            # XPath selector
+                            button = driver.find_element(By.XPATH, selector)
+                        else:
+                            # CSS selector
+                            button = driver.find_element(
+                                By.CSS_SELECTOR, selector)
+
+                        if button.is_displayed() and button.is_enabled():
+                            print(
+                                f"✅ Found 'xem thêm' button with selector: {selector}")
+                            driver.execute_script(
+                                "arguments[0].click();", button)
+                            button_found = True
+                            break
+                    except Exception as e:
+                        continue
+
+                if not button_found:
+                    print("ℹ️ No 'xem thêm' button found, chapters may be fully loaded")
+                    break
+
+                # Wait for new content to load
+                await asyncio.sleep(2)
+
+                # Check if we've reached the end (no more chapters to load)
+                try:
+                    # Look for indicators that all chapters are loaded
+                    end_indicators = [
+                        "//div[contains(text(), 'Không còn chapter nào')]",
+                        "//div[contains(text(), 'No more chapters')]",
+                        "//div[contains(text(), 'End of chapters')]"
+                    ]
+
+                    for indicator in end_indicators:
+                        try:
+                            element = driver.find_element(By.XPATH, indicator)
+                            if element.is_displayed():
+                                print("🏁 Reached end of chapters")
+                                break
+                        except:
+                            continue
+                except:
+                    pass
+
+            # Extract all chapter links from the fully loaded page
+            print("📖 Extracting chapter links from fully loaded page...")
+
+            # Get the final HTML content
+            html_content = driver.page_source
+            soup = BeautifulSoup(html_content, 'html.parser')
+
+            chapters = []
+
+            # NetTruyenVia specific selectors
+            chapter_links = soup.select('.list-chapter .row .chapter a')
+
+            if not chapter_links:
+                # Try alternative selectors
+                chapter_links = soup.select(
+                    '.chapter-list a, .chapters a, .manga-chapters a, .list-chapter a')
+
+            print(f"🔍 Found {len(chapter_links)} chapter links")
+
+            for link in chapter_links:
+                chapter_url = link.get('href')
+                if chapter_url:
+                    # Make absolute URL
+                    chapter_url = urljoin(manga_url, chapter_url)
+
+                    # Extract chapter number and title
+                    chapter_text = link.get_text(strip=True)
+
+                    # Try to extract chapter number
+                    chapter_match = re.search(
+                        r'chapter\s*(\d+(?:\.\d+)?)', chapter_text, re.IGNORECASE)
+                    if chapter_match:
+                        chapter_number = chapter_match.group(1)
+                    else:
+                        # Fallback: use the order in list
+                        chapter_number = str(len(chapters) + 1)
+
+                    chapters.append(
+                        (chapter_number, chapter_text, chapter_url))
+
+            # Reverse to get chapters in ascending order (usually they're listed in descending order)
+            chapters.reverse()
+
+            return chapters
+
+        except Exception as e:
+            print(f"❌ Error in Selenium chapter extraction: {str(e)}")
+            return []
+        finally:
+            if driver:
+                driver.quit()
+
+    async def _get_chapter_list_with_http(self, manga_url: str, custom_headers: Optional[dict] = None) -> List[Tuple[str, str, str]]:
+        """
+        Get chapter list using HTTP request (fallback method)
+        """
         headers = custom_headers or {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
@@ -111,7 +373,8 @@ class MangaCrawlerService:
         try:
             async with self.session.get(manga_url, headers=headers) as response:
                 if response.status != 200:
-                    raise Exception(f"Failed to fetch manga page: HTTP {response.status}")
+                    raise Exception(
+                        f"Failed to fetch manga page: HTTP {response.status}")
 
                 html_content = await response.text()
                 soup = BeautifulSoup(html_content, 'html.parser')
@@ -123,7 +386,8 @@ class MangaCrawlerService:
 
                 if not chapter_links:
                     # Try alternative selectors
-                    chapter_links = soup.select('.chapter-list a, .chapters a, .manga-chapters a')
+                    chapter_links = soup.select(
+                        '.chapter-list a, .chapters a, .manga-chapters a')
 
                 for link in chapter_links:
                     chapter_url = link.get('href')
@@ -135,23 +399,25 @@ class MangaCrawlerService:
                         chapter_text = link.get_text(strip=True)
 
                         # Try to extract chapter number
-                        chapter_match = re.search(r'chapter\s*(\d+(?:\.\d+)?)', chapter_text, re.IGNORECASE)
+                        chapter_match = re.search(
+                            r'chapter\s*(\d+(?:\.\d+)?)', chapter_text, re.IGNORECASE)
                         if chapter_match:
                             chapter_number = chapter_match.group(1)
                         else:
                             # Fallback: use the order in list
                             chapter_number = str(len(chapters) + 1)
 
-                        chapters.append((chapter_number, chapter_text, chapter_url))
+                        chapters.append(
+                            (chapter_number, chapter_text, chapter_url))
 
                 # Reverse to get chapters in ascending order (usually they're listed in descending order)
                 chapters.reverse()
 
-                print(f"Found {len(chapters)} chapters")
+                print(f"📖 Found {len(chapters)} chapters with HTTP method")
                 return chapters
 
         except Exception as e:
-            print(f"Error getting chapter list: {str(e)}")
+            print(f"❌ Error getting chapter list with HTTP: {str(e)}")
             return []
 
     async def _get_chapter_images(self, chapter_url: str, custom_headers: Optional[dict] = None) -> List[str]:
@@ -175,7 +441,8 @@ class MangaCrawlerService:
             async with self.session.get(chapter_url, headers=headers) as response:
                 if response.status == 200:
                     html_content = await response.text()
-                    image_urls = self._extract_chapter_images_from_html(html_content, chapter_url)
+                    image_urls = self._extract_chapter_images_from_html(
+                        html_content, chapter_url)
 
                     if image_urls:
                         return image_urls
@@ -292,7 +559,8 @@ class MangaCrawlerService:
             )
 
             # Scroll to load lazy images
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            driver.execute_script(
+                "window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(2)
 
             # Get final HTML
@@ -329,7 +597,8 @@ class MangaCrawlerService:
             ChapterInfo with download results
         """
         start_time = time.time()
-        chapter_folder = os.path.join(manga_folder, f"Chapter_{chapter_number}")
+        chapter_folder = os.path.join(
+            manga_folder, f"Chapter_{chapter_number}")
 
         # Only create local folder if not using cloud storage
         if image_type != "cloud":
@@ -369,7 +638,8 @@ class MangaCrawlerService:
                         folder_path=chapter_folder,
                         session=self.session,
                         base_url=chapter_url,  # Use chapter URL as referer
-                        wasabi_service=self.wasabi_service if hasattr(self, 'wasabi_service') else None,
+                        wasabi_service=self.wasabi_service if hasattr(
+                            self, 'wasabi_service') else None,
                         image_type=image_type,
                         manga_folder_path=manga_folder  # Pass manga folder for proper S3 structure
                     )
@@ -380,7 +650,8 @@ class MangaCrawlerService:
                             # For cloud storage, just update the filename in the ImageInfo
                             # No need to rename local files since they don't exist
                             image_info.filename = filename
-                            print(f"   ✅ Downloaded {i}/{len(image_urls)}: {filename} (cloud)")
+                            print(
+                                f"   ✅ Downloaded {i}/{len(image_urls)}: {filename} (cloud)")
                         else:
                             # For local storage, rename the actual file
                             old_path = image_info.local_path
@@ -391,11 +662,13 @@ class MangaCrawlerService:
                                 image_info.local_path = new_path
                                 image_info.filename = filename
 
-                            print(f"   ✅ Downloaded {i}/{len(image_urls)}: {filename} (local)")
+                            print(
+                                f"   ✅ Downloaded {i}/{len(image_urls)}: {filename} (local)")
 
                         downloaded_images.append(image_info)
                     else:
-                        errors.append(f"Failed to download image {i}: {img_url}")
+                        errors.append(
+                            f"Failed to download image {i}: {img_url}")
                         print(f"   ❌ Failed {i}/{len(image_urls)}: {img_url}")
 
                 except Exception as e:
@@ -404,7 +677,8 @@ class MangaCrawlerService:
                     print(f"   ❌ Error {i}/{len(image_urls)}: {str(e)}")
 
             processing_time = time.time() - start_time
-            print(f"   ⏱️ Chapter completed in {processing_time:.2f}s ({len(downloaded_images)}/{len(image_urls)} images)")
+            print(
+                f"   ⏱️ Chapter completed in {processing_time:.2f}s ({len(downloaded_images)}/{len(image_urls)} images)")
 
             return ChapterInfo(
                 chapter_number=chapter_number,
@@ -467,7 +741,8 @@ class MangaCrawlerService:
                     self.wasabi_service = WasabiService()
                     print("☁️ Cloud storage (Wasabi S3) enabled for manga crawl")
                 except Exception as e:
-                    errors.append(f"Failed to initialize Wasabi service: {str(e)}")
+                    errors.append(
+                        f"Failed to initialize Wasabi service: {str(e)}")
                     print(f"⚠️ Falling back to local storage: {str(e)}")
                     image_type = "local"
 
@@ -478,7 +753,8 @@ class MangaCrawlerService:
 
             async with self.session.get(manga_url, headers=headers) as response:
                 if response.status != 200:
-                    raise Exception(f"Failed to access manga page: HTTP {response.status}")
+                    raise Exception(
+                        f"Failed to access manga page: HTTP {response.status}")
 
                 html_content = await response.text()
                 manga_title = self._extract_manga_title(html_content)
@@ -522,14 +798,16 @@ class MangaCrawlerService:
             if actual_chapter_numbers:
                 min_chapter = min(actual_chapter_numbers)
                 max_chapter = max(actual_chapter_numbers)
-                print(f"📋 Available chapter range: {min_chapter} to {max_chapter}")
+                print(
+                    f"📋 Available chapter range: {min_chapter} to {max_chapter}")
 
             # Filter chapters based on range
             filtered_chapters = []
 
             # If no specific filtering requested, include all chapters
             if original_start_chapter is None and original_end_chapter is None:
-                print(f"💡 No chapter range specified - including all {len(all_chapters)} chapters")
+                print(
+                    f"💡 No chapter range specified - including all {len(all_chapters)} chapters")
                 filtered_chapters = all_chapters[:]
             else:
                 # Set defaults for filtering
@@ -541,7 +819,8 @@ class MangaCrawlerService:
 
                 # Check if requested range is valid
                 if actual_chapter_numbers and (start_chapter > max(actual_chapter_numbers) or (end_chapter and end_chapter < min(actual_chapter_numbers))):
-                    print(f"⚠️ Requested range ({start_chapter}-{end_chapter or 'end'}) is outside available range")
+                    print(
+                        f"⚠️ Requested range ({start_chapter}-{end_chapter or 'end'}) is outside available range")
                     print(f"💡 Including all available chapters instead")
                     filtered_chapters = all_chapters[:]
                 else:
@@ -551,26 +830,31 @@ class MangaCrawlerService:
                             num = float(chapter_num)
                             if num >= start_chapter:
                                 if end_chapter is None or num <= end_chapter:
-                                    filtered_chapters.append((chapter_num, chapter_title, chapter_url))
+                                    filtered_chapters.append(
+                                        (chapter_num, chapter_title, chapter_url))
                         except ValueError:
                             # If chapter number is not numeric, include it
                             print(f"   ⚠️ Non-numeric chapter: {chapter_num}")
-                            filtered_chapters.append((chapter_num, chapter_title, chapter_url))
+                            filtered_chapters.append(
+                                (chapter_num, chapter_title, chapter_url))
 
-            print(f"📋 After filtering: {len(filtered_chapters)} chapters will be processed")
+            print(
+                f"📋 After filtering: {len(filtered_chapters)} chapters will be processed")
 
             # Limit chapters if specified (but ignore max_chapters=0)
             if max_chapters and max_chapters > 0:
                 filtered_chapters = filtered_chapters[:max_chapters]
                 print(f"📋 Limited to first {max_chapters} chapters")
 
-            print(f"📋 Processing {len(filtered_chapters)} chapters (out of {len(all_chapters)} total)")
+            print(
+                f"📋 Processing {len(filtered_chapters)} chapters (out of {len(all_chapters)} total)")
 
             # Download chapters
             downloaded_chapters = []
 
             for i, (chapter_num, chapter_title, chapter_url) in enumerate(filtered_chapters, 1):
-                print(f"\n📖 [{i}/{len(filtered_chapters)}] Starting Chapter {chapter_num}")
+                print(
+                    f"\n📖 [{i}/{len(filtered_chapters)}] Starting Chapter {chapter_num}")
 
                 chapter_info = await self._download_chapter(
                     chapter_number=chapter_num,
@@ -585,12 +869,14 @@ class MangaCrawlerService:
 
                 # Add delay between chapters to avoid overwhelming the server
                 if i < len(filtered_chapters) and delay_between_chapters > 0:
-                    print(f"   ⏸️ Waiting {delay_between_chapters}s before next chapter...")
+                    print(
+                        f"   ⏸️ Waiting {delay_between_chapters}s before next chapter...")
                     await asyncio.sleep(delay_between_chapters)
 
             # Calculate statistics
             total_images = sum(len(ch.images) for ch in downloaded_chapters)
-            successful_chapters = sum(1 for ch in downloaded_chapters if ch.images_count > 0)
+            successful_chapters = sum(
+                1 for ch in downloaded_chapters if ch.images_count > 0)
 
             # Determine status
             if successful_chapters == 0:
@@ -604,7 +890,8 @@ class MangaCrawlerService:
 
             print(f"\n🎉 Manga crawl completed!")
             print(f"   📊 Status: {status}")
-            print(f"   📚 Chapters: {successful_chapters}/{len(downloaded_chapters)}")
+            print(
+                f"   📚 Chapters: {successful_chapters}/{len(downloaded_chapters)}")
             print(f"   🖼️ Total images: {total_images}")
             print(f"   ⏱️ Total time: {processing_time:.2f}s")
 
