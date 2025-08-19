@@ -95,7 +95,7 @@ class MangaCrawlerService:
 
     async def _get_chapter_list(self, manga_url: str, custom_headers: Optional[dict] = None) -> List[Tuple[str, str, str]]:
         """
-        Get list of all chapters from manga page using direct API call
+        Get list of all chapters from manga page using direct API call ONLY
 
         Args:
             manga_url: URL of the manga series page
@@ -106,22 +106,38 @@ class MangaCrawlerService:
         """
         print(f"🔍 Getting chapter list from: {manga_url}")
 
-        try:
-            # Try direct API call first (most efficient)
-            chapters = await self._get_chapter_list_with_api(manga_url, custom_headers)
+        # Try API call with retries
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                print(f"🔄 API attempt {attempt + 1}/{max_retries}")
+                chapters = await self._get_chapter_list_with_api(manga_url, custom_headers)
 
-            if chapters:
+                if chapters and len(chapters) > 0:
+                    print(
+                        f"✅ Found {len(chapters)} chapters using direct API call")
+                    return chapters
+                else:
+                    print(
+                        f"⚠️ No chapters found with API (attempt {attempt + 1})")
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(2)  # Wait before retry
+                        continue
+
+            except Exception as e:
                 print(
-                    f"✅ Found {len(chapters)} chapters using direct API call")
-                return chapters
-            else:
-                print("⚠️ No chapters found with API, trying HTTP method...")
-                return await self._get_chapter_list_with_http(manga_url, custom_headers)
+                    f"❌ Error getting chapter list with API (attempt {attempt + 1}): {str(e)}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2)  # Wait before retry
+                    continue
 
-        except Exception as e:
-            print(f"❌ Error getting chapter list with API: {str(e)}")
-            print("🔄 Falling back to HTTP method...")
+        # If all API attempts failed, try HTTP method as last resort
+        print("🔄 All API attempts failed, trying HTTP method as fallback...")
+        try:
             return await self._get_chapter_list_with_http(manga_url, custom_headers)
+        except Exception as e:
+            print(f"❌ HTTP method also failed: {str(e)}")
+            return []
 
     async def _get_chapter_list_with_api(self, manga_url: str, custom_headers: Optional[dict] = None) -> List[Tuple[str, str, str]]:
         """
@@ -130,29 +146,61 @@ class MangaCrawlerService:
         try:
             # Extract manga slug from URL
             # URL format: https://nettruyenvia.com/truyen-tranh/manga-slug
-            manga_slug = manga_url.rstrip('/').split('/')[-1]
+            parsed_url = manga_url.rstrip('/').split('/')
+
+            # Check if this is a valid manga URL (should have /truyen-tranh/ in path)
+            if '/truyen-tranh/' not in manga_url:
+                print(f"❌ Not a valid manga URL: {manga_url}")
+                print(
+                    f"   Expected format: https://nettruyenvia.com/truyen-tranh/manga-slug")
+                return []
+
+            # Extract the manga slug (last part after /truyen-tranh/)
+            manga_slug = parsed_url[-1]
+
+            # Validate slug
+            if not manga_slug or manga_slug in ['nettruyenvia.com', 'truyen-tranh', '']:
+                print(f"❌ Invalid manga slug extracted: '{manga_slug}'")
+                return []
 
             # API endpoint
             api_url = f"https://nettruyenvia.com/Comic/Services/ComicService.asmx/ChapterList?slug={manga_slug}"
 
             print(f"🔗 Calling API: {api_url}")
+            print(f"📋 Manga slug: {manga_slug}")
 
             headers = custom_headers or {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'application/json, text/javascript, */*; q=0.01',
                 'Referer': manga_url,
-                'X-Requested-With': 'XMLHttpRequest'
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json; charset=utf-8'
             }
 
             async with self.session.get(api_url, headers=headers, timeout=30) as response:
                 if response.status != 200:
                     print(f"❌ API request failed: HTTP {response.status}")
+                    print(f"   Response text: {await response.text()}")
                     return []
 
                 try:
+                    response_text = await response.text()
+                    print(
+                        f"📄 API Response length: {len(response_text)} characters")
+
+                    # Check if response is HTML instead of JSON
+                    if response_text.strip().startswith('<!DOCTYPE html>') or response_text.strip().startswith('<html'):
+                        print(f"❌ API returned HTML instead of JSON")
+                        print(
+                            f"   This usually means the manga slug is invalid or not found")
+                        print(f"   Response preview: {response_text[:200]}...")
+                        return []
+
+                    # Try to parse JSON
                     api_data = await response.json()
                 except Exception as e:
                     print(f"❌ Failed to parse API response as JSON: {str(e)}")
+                    print(f"   Response preview: {response_text[:200]}...")
                     return []
 
                 # Parse API response
@@ -189,10 +237,21 @@ class MangaCrawlerService:
 
                     print(
                         f"✅ Successfully parsed {len(chapters)} chapters from API")
+
+                    # Show sample chapters for verification
+                    if chapters:
+                        print(f"📋 Sample chapters:")
+                        for i, (num, name, url) in enumerate(chapters[:5], 1):
+                            print(f"   {i}. Chapter {num}: {name}")
+                        if len(chapters) > 5:
+                            print(f"   ... and {len(chapters) - 5} more")
+
                     return chapters
 
                 else:
                     print("❌ Invalid API response format")
+                    print(
+                        f"   API response keys: {list(api_data.keys()) if isinstance(api_data, dict) else 'Not a dict'}")
                     return []
 
         except Exception as e:

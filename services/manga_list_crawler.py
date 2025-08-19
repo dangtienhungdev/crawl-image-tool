@@ -198,24 +198,43 @@ class MangaListCrawler:
             manga_processed = 0
             total_images_downloaded = 0
 
-            print(f"📚 Processing {total_manga_found} manga...")
+            print(f"📚 Processing {total_manga_found} manga concurrently...")
 
-            # Process each manga
-            for i, (manga_url, manga_title) in enumerate(manga_links, 1):
+            # Create tasks for all manga to process concurrently
+            async def process_single_manga(manga_data: Tuple[str, str, int]) -> MangaListInfo:
+                """Process a single manga and return its info"""
+                manga_url, manga_title, manga_index = manga_data
+
                 try:
                     print(
-                        f"\n📖 Processing manga {i}/{total_manga_found}: {manga_title}")
+                        f"🚀 Starting manga {manga_index}/{total_manga_found}: {manga_title}")
                     print(f"   🔗 URL: {manga_url}")
 
                     # Create manga crawler instance for this manga and use async context manager
                     async with MangaCrawlerService() as manga_crawler:
                         # Crawl this manga
+                        # If max_chapters_per_manga is None, crawl all chapters
+                        # If it's specified, use it as limit but ensure we start from the beginning
+                        if max_chapters_per_manga is None:
+                            # Crawl all chapters from beginning to end
+                            crawl_max_chapters = None
+                            start_chapter = None
+                            end_chapter = None
+                            print(f"   📚 Crawling ALL chapters (no limit)")
+                        else:
+                            # Crawl specified number of chapters from the beginning
+                            crawl_max_chapters = max_chapters_per_manga
+                            start_chapter = None  # Start from first chapter
+                            end_chapter = None    # Let the max_chapters limit handle the end
+                            print(
+                                f"   📚 Crawling first {max_chapters_per_manga} chapters from beginning")
+
                         status, title, folder, total_chapters, chapters_info, manga_errors, processing_time = (
                             await manga_crawler.crawl_manga(
                                 manga_url=manga_url,
-                                max_chapters=max_chapters_per_manga,
-                                start_chapter=None,
-                                end_chapter=None,
+                                max_chapters=crawl_max_chapters,
+                                start_chapter=start_chapter,
+                                end_chapter=end_chapter,
                                 custom_headers=custom_headers,
                                 delay_between_chapters=delay_between_chapters,
                                 image_type=image_type
@@ -248,25 +267,18 @@ class MangaListCrawler:
                         errors=manga_errors
                     )
 
-                    manga_list_results.append(manga_info)
-                    manga_processed += 1
-                    total_images_downloaded += manga_total_images
-
-                    print(f"   ✅ Completed: {manga_status.upper()}")
+                    print(
+                        f"   ✅ Completed manga {manga_index}: {manga_status.upper()}")
                     print(
                         f"   📊 Chapters: {manga_info.chapters_downloaded}/{manga_info.total_chapters}")
                     print(
                         f"   🖼️ Images: {manga_info.total_images_downloaded}")
                     print(f"   ⏱️ Time: {processing_time:.2f}s")
 
-                    # Add delay between manga (except for the last one)
-                    if i < total_manga_found and delay_between_manga > 0:
-                        print(
-                            f"   ⏳ Waiting {delay_between_manga}s before next manga...")
-                        await asyncio.sleep(delay_between_manga)
+                    return manga_info
 
                 except Exception as e:
-                    error_msg = f"Error processing manga {i} ({manga_title}): {str(e)}"
+                    error_msg = f"Error processing manga {manga_index} ({manga_title}): {str(e)}"
                     errors.append(error_msg)
                     print(f"   ❌ {error_msg}")
 
@@ -282,7 +294,33 @@ class MangaListCrawler:
                         processing_time_seconds=0,
                         errors=[error_msg]
                     )
-                    manga_list_results.append(manga_info)
+                    return manga_info
+
+            # Prepare manga data with indices
+            manga_data_list = [(url, title, i+1)
+                               for i, (url, title) in enumerate(manga_links)]
+
+            # Process all manga concurrently
+            manga_tasks = [process_single_manga(
+                manga_data) for manga_data in manga_data_list]
+
+            # Wait for all tasks to complete
+            print(
+                f"🔄 Starting concurrent processing of {len(manga_tasks)} manga...")
+            manga_results = await asyncio.gather(*manga_tasks, return_exceptions=True)
+
+            # Process results
+            for result in manga_results:
+                if isinstance(result, Exception):
+                    # Handle any exceptions that weren't caught
+                    error_msg = f"Unhandled exception in manga processing: {str(result)}"
+                    errors.append(error_msg)
+                    print(f"❌ {error_msg}")
+                else:
+                    # Add successful result
+                    manga_list_results.append(result)
+                    manga_processed += 1
+                    total_images_downloaded += result.total_images_downloaded
 
             # Determine overall status
             successful_manga = len(
