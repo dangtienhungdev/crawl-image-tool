@@ -37,6 +37,8 @@ A powerful FastAPI service for crawling and downloading images from websites wit
 - 🕐 **Smart Delays**: Configurable delays between manga and chapter downloads
 - 📊 **Comprehensive Reporting**: Detailed statistics for each manga processed
 - ☁️ **Cloud Storage Support**: Upload all manga images to Wasabi S3 cloud storage
+- 🚫 **Smart Duplicate Detection**: Automatically skip existing manga and chapters
+- 📈 **Progress Tracking**: Monitor download progress across multiple sessions
 
 ### 🔧 Advanced Features
 
@@ -124,6 +126,23 @@ curl -X POST "http://localhost:8000/api/v1/manga/crawl" \
 
 # Check progress
 curl "http://localhost:8000/api/v1/manga/progress/example_manga_title?image_type=local"
+```
+
+### Manga List Progress Tracking
+
+```bash
+# Check progress for entire manga list
+curl "http://localhost:8000/api/v1/manga-list/progress?list_url=https://nettruyenvia.com/?page=637&image_type=local"
+
+# Crawl manga list with smart detection
+curl -X POST "http://localhost:8000/api/v1/manga-list/crawl" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://nettruyenvia.com/?page=637",
+    "max_manga": 5,
+    "max_chapters_per_manga": 3,
+    "image_type": "local"
+  }'
 ```
 
 ## 🚀 Quick Start

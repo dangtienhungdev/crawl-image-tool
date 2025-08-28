@@ -128,8 +128,16 @@ class ExistenceChecker:
                 if filename.lower().endswith(('.jpg', '.jpeg', '.png', '.webp')):
                     existing_images.append(filename)
 
-            # Sort images by name
-            existing_images.sort()
+            # Sort images by numeric order (handle both "001.jpg" and "1.jpg" formats)
+            def sort_key(filename):
+                # Extract number from filename (e.g., "001.jpg" -> 1, "10.jpg" -> 10)
+                import re
+                match = re.search(r'(\d+)', filename)
+                if match:
+                    return int(match.group(1))
+                return 0
+
+            existing_images.sort(key=sort_key)
 
             print(f"🖼️ Found {len(existing_images)} images in cloud chapter {chapter_number}")
             return len(existing_images) > 0, existing_images

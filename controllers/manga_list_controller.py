@@ -53,3 +53,29 @@ class MangaListController:
                 delay_between_chapters=request.delay_between_chapters,
                 custom_headers=request.custom_headers
             )
+
+    @staticmethod
+    async def get_manga_list_progress(list_url: str, image_type: str = "local") -> dict:
+        """
+        Get progress information for manga list crawling
+
+        Args:
+            list_url: URL of the manga list page
+            image_type: Storage type ("local" or "cloud")
+
+        Returns:
+            Dictionary containing progress information
+        """
+        try:
+            # Validate image_type parameter
+            if image_type not in ["local", "cloud"]:
+                raise ValueError("image_type must be 'local' or 'cloud'")
+
+            # Use the manga list crawler service
+            async with MangaListCrawler() as crawler:
+                return await crawler.get_manga_list_progress(list_url, image_type)
+
+        except ValueError as e:
+            raise e
+        except Exception as e:
+            raise Exception(f"Error retrieving manga list progress: {str(e)}")

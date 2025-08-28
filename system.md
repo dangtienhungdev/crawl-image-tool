@@ -94,4 +94,7 @@ crawl-image-tool/
 - **MangaCrawlerService**: Now checks existence before downloading
 - **MangaController**: New endpoint for progress checking
 - **MangaRoutes**: New `/progress/{manga_title}` endpoint
+- **MangaListCrawler**: Now uses smart detection for manga list processing
+- **MangaListController**: New endpoint for manga list progress checking
+- **MangaListRoutes**: New `/progress` endpoint for manga list progress
 - **Metadata Files**: `manga_metadata.json` tracks download progress

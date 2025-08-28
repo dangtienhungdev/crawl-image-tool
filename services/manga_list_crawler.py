@@ -21,6 +21,7 @@ from models.schemas import (
     MangaListInfo
 )
 from services.manga_crawler import MangaCrawlerService
+from services.existence_checker import ExistenceChecker
 
 
 class MangaListCrawler:
@@ -29,10 +30,12 @@ class MangaListCrawler:
     def __init__(self):
         self.session = None
         self.manga_crawler = MangaCrawlerService()
+        self.existence_checker = ExistenceChecker()
 
     async def __aenter__(self):
         """Async context manager entry"""
         self.session = aiohttp.ClientSession()
+        await self.existence_checker.initialize_wasabi()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -372,3 +375,104 @@ class MangaListCrawler:
                 errors=errors,
                 processing_time_seconds=processing_time
             )
+
+    async def get_manga_list_progress(self, list_url: str, image_type: str = "local") -> dict:
+        """
+        Get progress information for manga list crawling
+
+        Args:
+            list_url: URL of the manga list page
+            image_type: Storage type ("local" or "cloud")
+
+        Returns:
+            Dictionary containing progress information
+        """
+        try:
+            print(f"🔍 Getting progress for manga list: {list_url}")
+
+            # Extract manga URLs from the list page
+            manga_links = await self._extract_manga_urls(list_url)
+
+            if not manga_links:
+                return {
+                    "list_url": list_url,
+                    "image_type": image_type,
+                    "total_manga_found": 0,
+                    "manga_progress": [],
+                    "overall_progress": {
+                        "total_manga": 0,
+                        "completed_manga": 0,
+                        "total_chapters": 0,
+                        "total_images": 0
+                    }
+                }
+
+            # Get progress for each manga
+            manga_progress = []
+            total_chapters = 0
+            total_images = 0
+            completed_manga = 0
+
+            for manga_url, manga_title in manga_links:
+                try:
+                    # Create manga folder path
+                    sanitized_title = self._sanitize_folder_name(manga_title)
+                    manga_folder = os.path.join('downloads', sanitized_title)
+
+                    # Get progress for this manga
+                    progress = await self.existence_checker.get_manga_progress(manga_folder, image_type)
+
+                    manga_info = {
+                        "manga_url": manga_url,
+                        "manga_title": manga_title,
+                        "manga_folder": manga_folder,
+                        "progress": progress
+                    }
+
+                    manga_progress.append(manga_info)
+
+                    # Update totals
+                    total_chapters += progress.get("total_chapters", 0)
+                    total_images += progress.get("total_images", 0)
+                    if progress.get("total_chapters", 0) > 0:
+                        completed_manga += 1
+
+                except Exception as e:
+                    print(f"⚠️ Error getting progress for {manga_title}: {str(e)}")
+                    manga_progress.append({
+                        "manga_url": manga_url,
+                        "manga_title": manga_title,
+                        "manga_folder": "",
+                        "progress": {"error": str(e)}
+                    })
+
+            overall_progress = {
+                "total_manga": len(manga_links),
+                "completed_manga": completed_manga,
+                "total_chapters": total_chapters,
+                "total_images": total_images
+            }
+
+            return {
+                "list_url": list_url,
+                "image_type": image_type,
+                "total_manga_found": len(manga_links),
+                "manga_progress": manga_progress,
+                "overall_progress": overall_progress
+            }
+
+        except Exception as e:
+            print(f"❌ Error getting manga list progress: {str(e)}")
+            return {
+                "list_url": list_url,
+                "image_type": image_type,
+                "error": str(e),
+                "total_manga_found": 0,
+                "manga_progress": [],
+                "overall_progress": {
+                    "total_manga": 0,
+                    "completed_manga": 0,
+                    "total_chapters": 0,
+                    "total_images": 0
+                }
+            }

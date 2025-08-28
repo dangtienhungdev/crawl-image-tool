@@ -31,6 +31,8 @@ async def crawl_manga_list(request: MangaListCrawlRequest):
     - Support for both local and cloud storage
     - Configurable delays between operations
     - Comprehensive error reporting
+    - **NEW**: Smart duplicate detection - automatically skips existing manga and chapters
+    - **NEW**: Progress tracking - monitor download status across sessions
 
     **Example Request:**
     ```json
@@ -59,6 +61,44 @@ async def crawl_manga_list(request: MangaListCrawlRequest):
             status_code=500, detail=f"Internal server error: {str(e)}")
 
 
+@manga_list_router.get("/progress")
+async def get_manga_list_progress(list_url: str, image_type: str = "local"):
+    """
+    Get progress information for manga list crawling
+
+    This endpoint shows which manga from a list page have already been downloaded
+    and their current progress status.
+
+    Args:
+        list_url: URL of the manga list page (e.g., https://nettruyenvia.com/?page=637)
+        image_type: Storage type ("local" or "cloud")
+
+    Returns:
+        Dictionary containing progress information for all manga in the list
+    """
+    try:
+        if not list_url.startswith(('http://', 'https://')):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid URL format. URL must start with http:// or https://"
+            )
+
+        if image_type not in ["local", "cloud"]:
+            raise HTTPException(
+                status_code=400,
+                detail="image_type must be 'local' or 'cloud'"
+            )
+
+        result = await MangaListController.get_manga_list_progress(list_url, image_type)
+        return result
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error retrieving manga list progress: {str(e)}")
+
+
 @manga_list_router.get("/health")
 async def health_check():
     """
@@ -69,7 +109,8 @@ async def health_check():
         "service": "Manga List Crawler API",
         "version": "1.0.0",
         "endpoints": [
-            "POST /api/v1/manga-list/crawl - Crawl manga list page"
+            "POST /api/v1/manga-list/crawl - Crawl manga list page",
+            "GET /api/v1/manga-list/progress - Get manga list progress"
         ]
     }
 
