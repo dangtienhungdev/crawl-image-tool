@@ -31,6 +31,15 @@ manga_controller = MangaController()
     - Supports chapter range selection (start/end chapters)
     - Configurable delay between chapter downloads
     - Handles JavaScript-rendered content with Selenium
+    - **NEW**: Smart duplicate detection - skips existing chapters and images
+    - **NEW**: Supports both local and cloud storage with existence checking
+    - **NEW**: Maintains metadata to track download progress
+
+    Smart Duplicate Detection:
+    - Automatically detects existing chapters and skips them
+    - Checks individual images within chapters to avoid re-downloading
+    - Works with both local storage and cloud storage (Wasabi S3)
+    - Maintains metadata file (manga_metadata.json) for tracking
 
     Example folder structure:
     ```
@@ -43,10 +52,13 @@ manga_controller = MangaController()
             001.jpg
             002.jpg
             ...
+        manga_metadata.json  # Tracks download progress
     ```
 
     **Warning**: This operation can take a very long time for manga with many chapters.
     Consider using chapter limits or ranges for testing.
+
+    **Note**: When re-running the same manga, existing chapters will be skipped automatically.
     """,
     responses={
         200: {"model": MangaCrawlResponse, "description": "Successful manga crawling operation"},
@@ -144,6 +156,50 @@ async def manga_health_check() -> Dict[str, str]:
         raise HTTPException(
             status_code=500,
             detail=f"Manga crawler health check failed: {str(e)}"
+        )
+
+
+@router.get(
+    "/progress/{manga_title}",
+    summary="Get manga download progress",
+    description="""
+    Get the current download progress for a specific manga.
+    This shows which chapters and images have already been downloaded.
+
+    Supports both local and cloud storage types.
+    """,
+    responses={
+        200: {"description": "Manga progress retrieved successfully"},
+        400: {"model": ErrorResponse, "description": "Invalid manga title"},
+        500: {"model": ErrorResponse, "description": "Internal server error"}
+    }
+)
+async def get_manga_progress(manga_title: str, image_type: str = "local") -> Dict[str, Any]:
+    """
+    Get download progress for a specific manga
+
+    Args:
+        manga_title: Title of the manga (sanitized folder name)
+        image_type: Storage type ("local" or "cloud")
+
+    Returns:
+        Dictionary containing manga progress information
+    """
+    try:
+        if not manga_title or len(manga_title.strip()) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Manga title cannot be empty"
+            )
+
+        result = await manga_controller.get_manga_progress(manga_title, image_type)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error retrieving manga progress: {str(e)}"
         )
 
 

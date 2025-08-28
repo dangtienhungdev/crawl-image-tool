@@ -20,6 +20,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
 from services.image_crawler import ImageCrawlerService
+from services.existence_checker import ExistenceChecker
 from models.schemas import ChapterInfo, CrawlStatus, ImageInfo
 
 
@@ -30,11 +31,13 @@ class MangaCrawlerService:
         self.session: Optional[aiohttp.ClientSession] = None
         self.image_crawler = ImageCrawlerService()
         self.wasabi_service = None
+        self.existence_checker = ExistenceChecker()
 
     async def __aenter__(self):
         """Async context manager entry"""
         self.session = aiohttp.ClientSession()
         await self.image_crawler.__aenter__()
+        await self.existence_checker.initialize_wasabi()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -659,6 +662,53 @@ class MangaCrawlerService:
         chapter_folder = os.path.join(
             manga_folder, f"Chapter_{chapter_number}")
 
+        # Check if chapter already exists
+        chapter_exists, existing_images = await self.existence_checker.check_chapter_exists(
+            manga_folder, chapter_number, image_type
+        )
+
+        if chapter_exists:
+            print(f"📖 Chapter {chapter_number} already exists with {len(existing_images)} images - skipping download")
+
+            # Create ChapterInfo for existing chapter
+            existing_image_infos = []
+            for filename in existing_images:
+                if image_type == "local":
+                    local_path = os.path.join(chapter_folder, filename)
+                    image_info = ImageInfo(
+                        original_url="",  # We don't have this info for existing images
+                        local_path=local_path,
+                        filename=filename,
+                        cloud_url=None,
+                        size_bytes=None,
+                        width=None,
+                        height=None,
+                        format=None
+                    )
+                else:
+                    # For cloud storage, create image info without local path
+                    image_info = ImageInfo(
+                        original_url="",
+                        local_path="",
+                        filename=filename,
+                        cloud_url=f"cloud://{manga_folder}/Chapter_{chapter_number}/{filename}",
+                        size_bytes=None,
+                        width=None,
+                        height=None,
+                        format=None
+                    )
+                existing_image_infos.append(image_info)
+
+            return ChapterInfo(
+                chapter_number=chapter_number,
+                chapter_title=chapter_title,
+                chapter_url=chapter_url,
+                images_count=len(existing_images),
+                images=existing_image_infos,
+                errors=[],
+                processing_time_seconds=0.0
+            )
+
         # Only create local folder if not using cloud storage
         if image_type != "cloud":
             Path(chapter_folder).mkdir(parents=True, exist_ok=True)
@@ -690,6 +740,42 @@ class MangaCrawlerService:
                 try:
                     # Generate sequential filename
                     filename = f"{i:03d}.jpg"  # 001.jpg, 002.jpg, etc.
+
+                    # Check if image already exists
+                    image_exists = await self.existence_checker.check_image_exists(
+                        manga_folder, chapter_number, filename, image_type
+                    )
+
+                    if image_exists:
+                        print(f"   ⏭️ Image {i}/{len(image_urls)}: {filename} already exists - skipping")
+
+                        # Create ImageInfo for existing image
+                        if image_type == "local":
+                            local_path = os.path.join(chapter_folder, filename)
+                            image_info = ImageInfo(
+                                original_url=img_url,
+                                local_path=local_path,
+                                filename=filename,
+                                cloud_url=None,
+                                size_bytes=None,
+                                width=None,
+                                height=None,
+                                format=None
+                            )
+                        else:
+                            image_info = ImageInfo(
+                                original_url=img_url,
+                                local_path="",
+                                filename=filename,
+                                cloud_url=f"cloud://{manga_folder}/Chapter_{chapter_number}/{filename}",
+                                size_bytes=None,
+                                width=None,
+                                height=None,
+                                format=None
+                            )
+
+                        downloaded_images.append(image_info)
+                        continue
 
                     # Use the enhanced image crawler to download
                     image_info = await self.image_crawler._download_image(
@@ -728,7 +814,7 @@ class MangaCrawlerService:
                     else:
                         errors.append(
                             f"Failed to download image {i}: {img_url}")
-                        print(f"   ❌ Failed {i}/{len(image_urls)}: {img_url}")
+                        print(f"   ❌ Failed {i}/{len(image_urls)}: {str(e)}")
 
                 except Exception as e:
                     error_msg = f"Error downloading image {i}: {str(e)}"
@@ -738,6 +824,13 @@ class MangaCrawlerService:
             processing_time = time.time() - start_time
             print(
                 f"   ⏱️ Chapter completed in {processing_time:.2f}s ({len(downloaded_images)}/{len(image_urls)} images)")
+
+            # Update metadata for this chapter
+            if downloaded_images:
+                image_filenames = [img.filename for img in downloaded_images]
+                await self.existence_checker.update_chapter_metadata(
+                    manga_folder, chapter_number, image_filenames, image_type
+                )
 
             return ChapterInfo(
                 chapter_number=chapter_number,

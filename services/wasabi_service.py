@@ -175,6 +175,48 @@ class WasabiService:
         except ClientError:
             return False
 
+    def object_exists(self, s3_key: str) -> bool:
+        """
+        Alias for file_exists method (for compatibility with ExistenceChecker)
+
+        Args:
+            s3_key: S3 key (path) of the file
+
+        Returns:
+            True if file exists, False otherwise
+        """
+        return self.file_exists(s3_key)
+
+    def list_objects(self, prefix: str = "", max_keys: int = 1000) -> list:
+        """
+        List objects in Wasabi S3 bucket with given prefix
+
+        Args:
+            prefix: Prefix to filter objects
+            max_keys: Maximum number of keys to return
+
+        Returns:
+            List of object keys
+        """
+        try:
+            response = self.s3_client.list_objects_v2(
+                Bucket=self.bucket_name,
+                Prefix=prefix,
+                MaxKeys=max_keys
+            )
+
+            if 'Contents' in response:
+                return [obj['Key'] for obj in response['Contents']]
+            else:
+                return []
+
+        except ClientError as e:
+            logger.error(f"Error listing objects with prefix '{prefix}': {str(e)}")
+            return []
+        except Exception as e:
+            logger.error(f"Unexpected error listing objects: {str(e)}")
+            return []
+
     def get_file_url(self, s3_key: str) -> str:
         """
         Generate public URL for a file in Wasabi S3

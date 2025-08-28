@@ -1,6 +1,6 @@
 # 🖼️ Image Crawler API
 
-A powerful FastAPI service for crawling and downloading images from websites with advanced features including lazy loading support, JavaScript rendering, and base64 image extraction.
+A powerful FastAPI service for crawling and downloading images from websites with advanced features including lazy loading support, JavaScript rendering, base64 image extraction, and comprehensive manga management.
 
 ## ✨ Features
 
@@ -13,6 +13,7 @@ A powerful FastAPI service for crawling and downloading images from websites wit
 - 📂 **Organized Storage**: Automatically save images in domain-named folders
 - ☁️ **Cloud Storage Support**: Upload images to Wasabi S3 cloud storage
 - ⚡ **Concurrent Downloads**: Fast parallel image downloading with aiohttp
+- 📊 **Status Tracking**: Monitor crawling progress and status
 
 ### 📚 Full Manga Series Crawling
 
@@ -23,6 +24,10 @@ A powerful FastAPI service for crawling and downloading images from websites wit
 - ⏱️ **Rate Limiting**: Configurable delays between chapter downloads
 - 🛡️ **Hotlink Protection Bypass**: Proper Referer headers for blocked images
 - ☁️ **Cloud Storage Support**: Upload manga images to Wasabi S3 cloud storage
+- ℹ️ **Manga Information**: Preview manga details before downloading
+- 🚫 **Smart Duplicate Detection**: Automatically skip existing chapters and images
+- 📊 **Progress Tracking**: Monitor download progress with metadata tracking
+- 🔄 **Resume Support**: Resume interrupted downloads without re-downloading
 
 ### 📋 Manga List Batch Crawling
 
@@ -38,27 +43,87 @@ A powerful FastAPI service for crawling and downloading images from websites wit
 - 🛡️ **Robust Error Handling**: Comprehensive error reporting and recovery
 - 🎯 **Clean Architecture**: Well-structured codebase with separation of concerns
 - 🚫 **Anti-Bot Bypass**: Multiple strategies to handle blocked images
+- 🔍 **Health Monitoring**: Service health checks and status endpoints
+- 📝 **Detailed Logging**: Comprehensive logging for debugging and monitoring
+
+### 🚫 Smart Duplicate Detection
+
+- 🔍 **Chapter-Level Checking**: Automatically detects existing chapters and skips them
+- 🖼️ **Image-Level Checking**: Checks individual images within chapters to avoid re-downloading
+- 💾 **Dual Storage Support**: Works with both local storage and cloud storage (Wasabi S3)
+- 📊 **Metadata Tracking**: Maintains `manga_metadata.json` files for progress tracking
+- ⚡ **Performance Optimization**: Significantly faster re-runs by skipping existing content
+- 🔄 **Resume Capability**: Resume interrupted downloads from where they left off
+- 📈 **Progress Monitoring**: Track download progress across multiple sessions
 
 ## 🏗️ Project Structure
 
 ```
-crawl-images/
-├── controllers/          # Business logic controllers
-│   ├── __init__.py
-│   └── image_controller.py
-├── services/            # Core services and utilities
-│   ├── __init__.py
-│   └── image_crawler.py
-├── routes/              # FastAPI route definitions
-│   ├── __init__.py
-│   └── image_routes.py
-├── models/              # Data models and schemas
-│   ├── __init__.py
-│   └── schemas.py
-├── downloads/           # Downloaded images storage (auto-created)
-├── main.py              # FastAPI application entry point
-├── requirements.txt     # Python dependencies
-└── README.md           # This file
+crawl-image-tool/
+├── .git/                          # Git repository
+├── .env                           # Environment variables
+├── .env.example                   # Environment variables template
+├── .gitignore                     # Git ignore file
+├── README.md                      # Project documentation
+├── requirements.txt               # Python dependencies
+├── main.py                        # FastAPI application entry point
+├── system.md                      # System architecture documentation
+├── controllers/                   # Business logic controllers
+│   ├── __init__.py               # Package initialization
+│   ├── image_controller.py       # Image controller logic
+│   ├── manga_controller.py       # Manga controller logic
+│   └── manga_list_controller.py  # Manga list controller
+├── services/                      # Core services and utilities
+│   ├── __init__.py               # Package initialization
+│   ├── image_crawler.py          # Image crawling service
+│   ├── manga_crawler.py          # Manga crawling service
+│   ├── manga_list_crawler.py     # Manga list crawling service
+│   └── wasabi_service.py         # Wasabi storage service
+├── routes/                        # FastAPI route definitions
+│   ├── __init__.py               # Package initialization
+│   ├── image_routes.py           # Image API endpoints
+│   ├── manga_routes.py           # Manga API endpoints
+│   └── manga_list_routes.py      # Manga list API endpoints
+├── models/                        # Data models and schemas
+│   ├── __init__.py               # Package initialization
+│   └── schemas.py                # Data schemas and models
+└── downloads/                     # Downloaded images storage (auto-created)
+```
+
+## 🚫 Smart Duplicate Detection
+
+The manga crawler now includes intelligent duplicate detection to avoid re-downloading existing content:
+
+### How It Works
+
+1. **Chapter-Level Detection**: Before processing a chapter, the system checks if it already exists
+2. **Image-Level Detection**: For each image, it verifies if the file already exists locally or in cloud storage
+3. **Metadata Tracking**: Progress is tracked in `manga_metadata.json` files for each manga
+4. **Automatic Skipping**: Existing chapters and images are automatically skipped during re-runs
+
+### Benefits
+
+- ⚡ **Faster Re-runs**: Skip existing content automatically
+- 💾 **Storage Efficiency**: No duplicate files created
+- 🔄 **Resume Support**: Continue interrupted downloads seamlessly
+- 📊 **Progress Tracking**: Monitor download status across sessions
+- 🌐 **Cloud Compatible**: Works with both local and cloud storage
+
+### Example Usage
+
+```bash
+# First run - downloads all chapters
+curl -X POST "http://localhost:8000/api/v1/manga/crawl" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://nettruyenvia.com/truyen-tranh/example", "image_type": "local"}'
+
+# Second run - automatically skips existing chapters
+curl -X POST "http://localhost:8000/api/v1/manga/crawl" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://nettruyenvia.com/truyen-tranh/example", "image_type": "local"}'
+
+# Check progress
+curl "http://localhost:8000/api/v1/manga/progress/example_manga_title?image_type=local"
 ```
 
 ## 🚀 Quick Start
@@ -74,7 +139,7 @@ crawl-images/
 1. **Clone or download the project**:
 
    ```bash
-   cd crawl-images
+   cd crawl-image-tool
    ```
 
 2. **Create a virtual environment** (recommended):
@@ -92,6 +157,12 @@ crawl-images/
 3. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
+   ```
+
+4. **Set up environment variables** (optional):
+   ```bash
+   cp .env.example .env
+   # Edit .env with your Wasabi S3 credentials if using cloud storage
    ```
 
 ### Running the Application
@@ -113,9 +184,14 @@ crawl-images/
    - Interactive Documentation: http://localhost:8000/docs
    - Alternative Documentation: http://localhost:8000/redoc
 
-## 📖 API Usage
+## 📖 API Reference
 
-### Crawl Images from a Website
+### Base URL
+All API endpoints are prefixed with `/api/v1`
+
+### 🖼️ Image Crawling Endpoints
+
+#### Crawl Images from a Website
 
 **Endpoint**: `POST /api/v1/crawl`
 
@@ -123,14 +199,14 @@ crawl-images/
 
 ```json
 {
-	"url": "https://nettruyenvia.com/",
-	"max_images": 100,
-	"include_base64": true,
-	"use_selenium": true,
-	"image_type": "local",
-	"custom_headers": {
-		"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-	}
+    "url": "https://nettruyenvia.com/",
+    "max_images": 100,
+    "include_base64": true,
+    "use_selenium": true,
+    "image_type": "local",
+    "custom_headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
 }
 ```
 
@@ -147,30 +223,48 @@ crawl-images/
 
 ```json
 {
-	"status": "success",
-	"url": "https://nettruyenvia.com/",
-	"domain": "nettruyenvia.com",
-	"folder_path": "downloads/nettruyenvia_com",
-	"total_images_found": 25,
-	"images_downloaded": 23,
-	"images": [
-		{
-			"original_url": "https://nettruyenvia.com/image1.jpg",
-			"local_path": "downloads/nettruyenvia_com/image1.jpg",
-			"filename": "image1.jpg",
-			"cloud_url": "https://s3.ap-southeast-1.wasabisys.com/web-truyen/images/nettruyenvia_com/image1.jpg",
-			"size_bytes": 15420,
-			"width": 800,
-			"height": 600,
-			"format": "jpeg"
-		}
-	],
-	"errors": [],
-	"processing_time_seconds": 12.34
+    "status": "success",
+    "url": "https://nettruyenvia.com/",
+    "domain": "nettruyenvia.com",
+    "folder_path": "downloads/nettruyenvia_com",
+    "total_images_found": 25,
+    "images_downloaded": 23,
+    "images": [
+        {
+            "original_url": "https://nettruyenvia.com/image1.jpg",
+            "local_path": "downloads/nettruyenvia_com/image1.jpg",
+            "filename": "image1.jpg",
+            "cloud_url": "https://s3.ap-southeast-1.wasabisys.com/web-truyen/images/nettruyenvia_com/image1.jpg",
+            "size_bytes": 15420,
+            "width": 800,
+            "height": 600,
+            "format": "jpeg"
+        }
+    ],
+    "errors": [],
+    "processing_time_seconds": 12.34
 }
 ```
 
-### Health Check
+#### Get Crawling Status
+
+**Endpoint**: `GET /api/v1/status/{url:path}`
+
+**Description**: Get the current status and information for a previously crawled URL
+
+**Response**:
+```json
+{
+    "url": "https://nettruyenvia.com/",
+    "status": "completed",
+    "last_crawled": "2024-01-15T10:30:00Z",
+    "total_images": 25,
+    "successful_downloads": 23,
+    "failed_downloads": 2
+}
+```
+
+#### Health Check
 
 **Endpoint**: `GET /api/v1/health`
 
@@ -178,13 +272,15 @@ crawl-images/
 
 ```json
 {
-	"status": "healthy",
-	"service": "Image Crawler API",
-	"version": "1.0.0"
+    "status": "healthy",
+    "service": "Image Crawler API",
+    "version": "1.0.0"
 }
 ```
 
-### Crawl Entire Manga Series
+### 📚 Manga Management Endpoints
+
+#### Crawl Entire Manga Series
 
 **Endpoint**: `POST /api/v1/manga/crawl`
 
@@ -192,15 +288,15 @@ crawl-images/
 
 ```json
 {
-	"url": "https://nettruyenvia.com/truyen-tranh/hoc-cung-em-gai-khong-can-than-tro-thanh-vo-dich",
-	"max_chapters": 10,
-	"start_chapter": 1,
-	"end_chapter": 10,
-	"image_type": "local",
-	"delay_between_chapters": 2.0,
-	"custom_headers": {
-		"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-	}
+    "url": "https://nettruyenvia.com/truyen-tranh/hoc-cung-em-gai-khong-can-than-tro-thanh-vo-dich",
+    "max_chapters": 10,
+    "start_chapter": 1,
+    "end_chapter": 10,
+    "image_type": "local",
+    "delay_between_chapters": 2.0,
+    "custom_headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
 }
 ```
 
@@ -213,6 +309,29 @@ crawl-images/
 - `image_type` (optional, default: "local"): Storage type - "local" for local files, "cloud" for Wasabi S3
 - `delay_between_chapters` (optional, default: 2.0): Delay between downloads
 - `custom_headers` (optional): Custom HTTP headers
+
+**Response**:
+
+```json
+{
+    "status": "success",
+    "manga_url": "https://nettruyenvia.com/truyen-tranh/...",
+    "manga_title": "Học Cùng Em Gái, Không Cần Thận Trở Thành Vô Địch",
+    "folder_path": "downloads/Hoc_Cung_Em_Gai_Khong_Can_Than_Tro_Thanh_Vo_Dich",
+    "total_chapters": 20,
+    "chapters_downloaded": 10,
+    "total_images_downloaded": 150,
+    "chapters": [
+        {
+            "chapter_number": "1",
+            "chapter_title": "Chapter 1",
+            "images_downloaded": 15,
+            "status": "success"
+        }
+    ],
+    "processing_time_seconds": 120.5
+}
+```
 
 **Example Folder Structure**:
 
@@ -231,7 +350,32 @@ downloads/
         └── ...
 ```
 
-### Crawl Manga List Page (Batch Processing)
+#### Get Manga Information
+
+**Endpoint**: `GET /api/v1/manga/info?url={manga_url}`
+
+**Description**: Preview manga information before downloading
+
+**Response**:
+
+```json
+{
+    "manga_url": "https://nettruyenvia.com/truyen-tranh/...",
+    "manga_title": "Học Cùng Em Gái, Không Cần Thận Trở Thành Vô Địch",
+    "total_chapters": 20,
+    "chapters": [
+        {
+            "chapter_number": "166",
+            "chapter_title": "Chapter 166",
+            "chapter_url": "https://..."
+        }
+    ]
+}
+```
+
+### 📋 Manga List Batch Processing Endpoints
+
+#### Crawl Manga List Page
 
 **Endpoint**: `POST /api/v1/manga-list/crawl`
 
@@ -239,15 +383,15 @@ downloads/
 
 ```json
 {
-	"url": "https://nettruyenvia.com/?page=637",
-	"max_manga": 5,
-	"max_chapters_per_manga": 3,
-	"image_type": "cloud",
-	"delay_between_manga": 3.0,
-	"delay_between_chapters": 2.0,
-	"custom_headers": {
-		"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-	}
+    "url": "https://nettruyenvia.com/?page=637",
+    "max_manga": 5,
+    "max_chapters_per_manga": 3,
+    "image_type": "cloud",
+    "delay_between_manga": 3.0,
+    "delay_between_chapters": 2.0,
+    "custom_headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
 }
 ```
 
@@ -265,26 +409,26 @@ downloads/
 
 ```json
 {
-	"status": "success",
-	"list_url": "https://nettruyenvia.com/?page=637",
-	"total_manga_found": 20,
-	"manga_processed": 5,
-	"total_images_downloaded": 150,
-	"manga_list": [
-		{
-			"manga_url": "https://nettruyenvia.com/truyen-tranh/manga-1",
-			"manga_title": "Manga Title 1",
-			"manga_folder": "downloads/Manga_Title_1",
-			"total_chapters": 10,
-			"chapters_downloaded": 3,
-			"total_images_downloaded": 30,
-			"status": "success",
-			"processing_time_seconds": 45.2,
-			"errors": []
-		}
-	],
-	"errors": [],
-	"processing_time_seconds": 180.5
+    "status": "success",
+    "list_url": "https://nettruyenvia.com/?page=637",
+    "total_manga_found": 20,
+    "manga_processed": 5,
+    "total_images_downloaded": 150,
+    "manga_list": [
+        {
+            "manga_url": "https://nettruyenvia.com/truyen-tranh/manga-1",
+            "manga_title": "Manga Title 1",
+            "manga_folder": "downloads/Manga_Title_1",
+            "total_chapters": 10,
+            "chapters_downloaded": 3,
+            "total_images_downloaded": 30,
+            "status": "success",
+            "processing_time_seconds": 45.2,
+            "errors": []
+        }
+    ],
+    "errors": [],
+    "processing_time_seconds": 180.5
 }
 ```
 
@@ -306,24 +450,72 @@ downloads/
 └── ...
 ```
 
-### Get Manga Information
+#### Manga List Health Check
 
-**Endpoint**: `GET /api/v1/manga/info?url={manga_url}`
+**Endpoint**: `GET /api/v1/manga-list/health`
 
-Preview manga information before downloading:
+**Response**:
 
 ```json
 {
-	"manga_url": "https://nettruyenvia.com/truyen-tranh/...",
-	"manga_title": "Học Cùng Em Gái, Không Cần Thận Trở Thành Vô Địch",
-	"total_chapters": 20,
-	"chapters": [
-		{
-			"chapter_number": "166",
-			"chapter_title": "Chapter 166",
-			"chapter_url": "https://..."
-		}
-	]
+    "status": "healthy",
+    "service": "Manga List Crawler API",
+    "version": "1.0.0",
+    "endpoints": [
+        "POST /api/v1/manga-list/crawl - Crawl manga list page"
+    ]
+}
+```
+
+#### Get Manga List Examples
+
+**Endpoint**: `GET /api/v1/manga-list/examples`
+
+**Response**:
+
+```json
+{
+    "examples": {
+        "basic_local": {
+            "description": "Basic manga list crawl with local storage",
+            "request": {
+                "url": "https://nettruyenvia.com/?page=637",
+                "max_manga": 3,
+                "max_chapters_per_manga": 2,
+                "image_type": "local",
+                "delay_between_manga": 3.0,
+                "delay_between_chapters": 2.0
+            }
+        },
+        "cloud_storage": {
+            "description": "Manga list crawl with cloud storage",
+            "request": {
+                "url": "https://nettruyenvia.com/?page=637",
+                "max_manga": 5,
+                "max_chapters_per_manga": 3,
+                "image_type": "cloud",
+                "delay_between_manga": 3.0,
+                "delay_between_chapters": 2.0
+            }
+        }
+    }
+}
+```
+
+### 🏠 Root Endpoint
+
+#### API Information
+
+**Endpoint**: `GET /`
+
+**Response**:
+
+```json
+{
+    "message": "Welcome to Image Crawler API",
+    "version": "1.0.0",
+    "documentation": "/docs",
+    "health_check": "/api/v1/health"
 }
 ```
 
@@ -355,6 +547,7 @@ The API provides comprehensive error reporting:
 - Individual image download failures don't stop the entire process
 - Partial success status when some images fail to download
 - Detailed error messages for troubleshooting
+- Graceful fallbacks for various failure scenarios
 
 ## 🛠️ Configuration
 
@@ -401,8 +594,13 @@ downloads/
 │   ├── image1.jpg
 │   ├── image2.png
 │   └── base64_image_1.jpg
-├── example_com/
-│   └── logo.png
+├── Manga_Title_1/           # Manga series folder
+│   ├── Chapter_1/
+│   │   ├── 001.jpg
+│   │   └── 002.jpg
+│   └── Chapter_2/
+│       ├── 001.jpg
+│       └── 002.jpg
 └── ...
 ```
 
@@ -438,7 +636,9 @@ For debugging, you can run the server with detailed logging:
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload --log-level debug
 ```
 
-## 📝 Example Usage with cURL
+## 📝 Example Usage
+
+### With cURL
 
 ```bash
 # Crawl images from a website (local storage)
@@ -463,11 +663,20 @@ curl -X POST "http://localhost:8000/api/v1/crawl" \
        "image_type": "cloud"
      }'
 
-# Test Wasabi S3 connection
-curl -X GET "http://localhost:8000/api/v1/wasabi-test"
-
 # Health check
 curl -X GET "http://localhost:8000/api/v1/health"
+
+# Crawl manga series
+curl -X POST "http://localhost:8000/api/v1/manga/crawl" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "url": "https://nettruyenvia.com/truyen-tranh/...",
+       "max_chapters": 5,
+       "image_type": "local"
+     }'
+
+# Get manga information
+curl -X GET "http://localhost:8000/api/v1/manga/info?url=https://nettruyenvia.com/truyen-tranh/..."
 
 # Crawl manga list page (batch processing)
 curl -X POST "http://localhost:8000/api/v1/manga-list/crawl" \
@@ -482,7 +691,7 @@ curl -X POST "http://localhost:8000/api/v1/manga-list/crawl" \
      }'
 ```
 
-## 📝 Example Usage with Python
+### With Python
 
 ```python
 import requests
@@ -519,9 +728,24 @@ for image in result['images']:
     if image.get('cloud_url'):
         print(f"Cloud URL: {image['cloud_url']}")
 
-# Test Wasabi connection
-response = requests.get('http://localhost:8000/api/v1/wasabi-test')
-print(response.json())
+# Get manga information
+response = requests.get('http://localhost:8000/api/v1/manga/info',
+    params={'url': 'https://nettruyenvia.com/truyen-tranh/...'}
+)
+manga_info = response.json()
+print(f"Manga: {manga_info['manga_title']} - {manga_info['total_chapters']} chapters")
+
+# Crawl manga series
+response = requests.post('http://localhost:8000/api/v1/manga/crawl',
+    json={
+        'url': 'https://nettruyenvia.com/truyen-tranh/...',
+        'max_chapters': 5,
+        'image_type': 'local'
+    }
+)
+
+result = response.json()
+print(f"Downloaded {result['total_images_downloaded']} images from {result['chapters_downloaded']} chapters")
 
 # Crawl manga list page (batch processing)
 response = requests.post('http://localhost:8000/api/v1/manga-list/crawl',
@@ -565,3 +789,4 @@ If you encounter any issues or have questions:
 1. Check the troubleshooting section above
 2. Review the API documentation at `/docs`
 3. Create an issue in the project repository
+4. Check the system architecture documentation in `system.md`

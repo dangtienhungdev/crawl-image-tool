@@ -177,3 +177,47 @@ class MangaController:
                 status_code=500,
                 detail=f"Manga crawler health check failed: {str(e)}"
             )
+
+    async def get_manga_progress(self, manga_title: str, image_type: str = "local") -> Dict[str, Any]:
+        """
+        Get download progress for a specific manga
+
+        Args:
+            manga_title: Title of the manga (sanitized folder name)
+            image_type: Storage type ("local" or "cloud")
+
+        Returns:
+            Dictionary containing manga progress information
+        """
+        try:
+            # Validate manga title
+            if not manga_title or len(manga_title.strip()) == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Manga title cannot be empty"
+                )
+
+            # Create manga folder path
+            manga_folder = os.path.join('downloads', manga_title.strip())
+
+            # Use async context manager for the manga crawler service
+            async with MangaCrawlerService() as crawler:
+                # Get progress from existence checker
+                progress = await crawler.existence_checker.get_manga_progress(manga_folder, image_type)
+
+                # Add manga title and folder info
+                progress.update({
+                    "manga_title": manga_title,
+                    "manga_folder": manga_folder,
+                    "image_type": image_type
+                })
+
+                return progress
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error retrieving manga progress: {str(e)}"
+            )
