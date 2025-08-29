@@ -79,3 +79,57 @@ class MangaListController:
             raise e
         except Exception as e:
             raise Exception(f"Error retrieving manga list progress: {str(e)}")
+
+    @staticmethod
+    async def get_all_crawled_manga(image_type: str = "local") -> dict:
+        """
+        Get all manga that have been crawled and stored
+
+        Args:
+            image_type: Storage type ("local" or "cloud")
+
+        Returns:
+            Dictionary containing all crawled manga information
+        """
+        try:
+            # Validate image_type parameter
+            if image_type not in ["local", "cloud"]:
+                raise ValueError("image_type must be 'local' or 'cloud'")
+
+            # Use the manga list crawler service
+            async with MangaListCrawler() as crawler:
+                return await crawler.get_all_crawled_manga(image_type)
+
+        except ValueError as e:
+            raise e
+        except Exception as e:
+            raise Exception(f"Error retrieving all crawled manga: {str(e)}")
+
+    @staticmethod
+    async def get_manga_details(manga_title: str, image_type: str = "local") -> dict:
+        """
+        Get detailed information for a specific manga
+
+        Args:
+            manga_title: Title of the manga to get details for
+            image_type: Storage type ("local" or "cloud")
+
+        Returns:
+            Dictionary containing detailed manga information
+        """
+        try:
+            # Validate parameters
+            if not manga_title or len(manga_title.strip()) == 0:
+                raise ValueError("manga_title cannot be empty")
+
+            if image_type not in ["local", "cloud"]:
+                raise ValueError("image_type must be 'local' or 'cloud'")
+
+            # Use the manga list crawler service
+            async with MangaListCrawler() as crawler:
+                return await crawler.get_manga_details(manga_title.strip(), image_type)
+
+        except ValueError as e:
+            raise e
+        except Exception as e:
+            raise Exception(f"Error retrieving manga details: {str(e)}")

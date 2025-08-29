@@ -99,6 +99,75 @@ async def get_manga_list_progress(list_url: str, image_type: str = "local"):
             status_code=500, detail=f"Error retrieving manga list progress: {str(e)}")
 
 
+@manga_list_router.get("/all-manga")
+async def get_all_crawled_manga(image_type: str = "local"):
+    """
+    Get all manga that have been crawled and stored
+
+    This endpoint returns a comprehensive list of all manga that have been downloaded,
+    organized by storage type (local or cloud).
+
+    Args:
+        image_type: Storage type ("local" or "cloud")
+
+    Returns:
+        Dictionary containing all crawled manga information with statistics
+    """
+    try:
+        if image_type not in ["local", "cloud"]:
+            raise HTTPException(
+                status_code=400,
+                detail="image_type must be 'local' or 'cloud'"
+            )
+
+        result = await MangaListController.get_all_crawled_manga(image_type)
+        return result
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error retrieving all crawled manga: {str(e)}")
+
+
+@manga_list_router.get("/manga/{manga_title}")
+async def get_manga_details(manga_title: str, image_type: str = "local"):
+    """
+    Get detailed information for a specific manga
+
+    This endpoint returns comprehensive details about a specific manga,
+    including all chapters, images, and storage information.
+
+    Args:
+        manga_title: Title of the manga to get details for
+        image_type: Storage type ("local" or "cloud")
+
+    Returns:
+        Dictionary containing detailed manga information
+    """
+    try:
+        if not manga_title or len(manga_title.strip()) == 0:
+            raise HTTPException(
+                status_code=400,
+                detail="manga_title cannot be empty"
+            )
+
+        if image_type not in ["local", "cloud"]:
+            raise HTTPException(
+                status_code=400,
+                detail="image_type must be 'local' or 'cloud'"
+            )
+
+        result = await MangaListController.get_manga_details(manga_title, image_type)
+        return result
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error retrieving manga details: {str(e)}")
+
+
 @manga_list_router.get("/health")
 async def health_check():
     """
@@ -110,7 +179,9 @@ async def health_check():
         "version": "1.0.0",
         "endpoints": [
             "POST /api/v1/manga-list/crawl - Crawl manga list page",
-            "GET /api/v1/manga-list/progress - Get manga list progress"
+            "GET /api/v1/manga-list/progress - Get manga list progress",
+            "GET /api/v1/manga-list/all-manga - Get all crawled manga",
+            "GET /api/v1/manga-list/manga/{manga_title} - Get manga details"
         ]
     }
 

@@ -143,7 +143,117 @@ curl -X POST "http://localhost:8000/api/v1/manga-list/crawl" \
     "max_chapters_per_manga": 3,
     "image_type": "local"
   }'
+
+# Get all crawled manga
+curl "http://localhost:8000/api/v1/manga-list/all-manga?image_type=local"
+curl "http://localhost:8000/api/v1/manga-list/all-manga?image_type=cloud"
 ```
+
+## 📚 All Manga Management
+
+### Get All Crawled Manga
+
+The system provides comprehensive manga management capabilities to track all downloaded content:
+
+```bash
+# Get all manga stored locally
+curl "http://localhost:8000/api/v1/manga-list/all-manga?image_type=local"
+
+# Get all manga stored in cloud
+curl "http://localhost:8000/api/v1/manga-list/all-manga?image_type=cloud"
+
+# Get details for a specific manga
+curl "http://localhost:8000/api/v1/manga-list/manga/Black_Clover?image_type=cloud"
+curl "http://localhost:8000/api/v1/manga-list/manga/test_manga?image_type=local"
+
+**Response includes:**
+- Total count of manga, chapters, and images
+- Detailed information for each manga
+- Progress tracking and metadata status
+- Storage location and organization
+
+**Example Response:**
+```json
+{
+  "image_type": "local",
+  "total_manga": 5,
+  "total_chapters": 25,
+  "total_images": 1250,
+  "manga_list": [
+    {
+      "manga_title": "Example Manga",
+      "manga_folder": "downloads/Example_Manga",
+      "progress": {
+        "total_chapters": 5,
+        "completed_chapters": 5,
+        "total_images": 250
+      },
+      "has_metadata": true,
+      "has_chapters": true
+    }
+  ]
+}
+```
+
+### Features:
+- **📊 Comprehensive Statistics**: Total counts across all manga
+- **📖 Detailed Manga Info**: Individual manga progress and status
+- **🗂️ Storage Organization**: Clear folder structure information
+- **📈 Progress Tracking**: Chapter and image completion status
+- **🌐 Dual Storage Support**: Works with both local and cloud storage
+
+### Get Manga Details
+
+Get comprehensive details for a specific manga:
+
+```bash
+# Get details for a cloud manga
+curl "http://localhost:8000/api/v1/manga-list/manga/Black_Clover?image_type=cloud"
+
+# Get details for a local manga
+curl "http://localhost:8000/api/v1/manga-list/manga/test_manga?image_type=local"
+```
+
+**Response includes:**
+- Complete chapter list with image counts
+- Individual image filenames for each chapter
+- Storage information (folder size, dates, metadata)
+- Cloud storage details (bucket, objects count)
+- Summary statistics and averages
+
+**Example Response:**
+```json
+{
+  "manga_title": "Black_Clover",
+  "image_type": "cloud",
+  "found": true,
+  "summary": {
+    "total_chapters": 217,
+    "total_images": 3920,
+    "average_images_per_chapter": 18.1
+  },
+  "chapter_details": [
+    {
+      "chapter_number": "1",
+      "total_images": 47,
+      "images": ["001.jpg", "002.jpg", "003.jpg"],
+      "status": "completed"
+    }
+  ],
+  "cloud_info": {
+    "bucket_name": "web-truyen",
+    "total_objects": 3920,
+    "endpoint_url": "https://s3.wasabisys.com"
+  }
+}
+```
+
+### Features:
+- **📚 Chapter Details**: Complete list with image counts and filenames
+- **📊 Statistics**: Total chapters, images, and averages
+- **🗂️ Storage Info**: Folder size, creation/modification dates
+- **☁️ Cloud Details**: Bucket information and object counts
+- **🔍 Error Handling**: Clear feedback for missing manga
 
 ## 🚀 Quick Start
 

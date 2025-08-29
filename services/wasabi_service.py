@@ -199,16 +199,34 @@ class WasabiService:
             List of object keys
         """
         try:
-            response = self.s3_client.list_objects_v2(
-                Bucket=self.bucket_name,
-                Prefix=prefix,
-                MaxKeys=max_keys
-            )
+            all_objects = []
+            continuation_token = None
 
-            if 'Contents' in response:
-                return [obj['Key'] for obj in response['Contents']]
-            else:
-                return []
+            while True:
+                # Prepare request parameters
+                request_params = {
+                    'Bucket': self.bucket_name,
+                    'Prefix': prefix,
+                    'MaxKeys': max_keys
+                }
+
+                # Add continuation token if available
+                if continuation_token:
+                    request_params['ContinuationToken'] = continuation_token
+
+                response = self.s3_client.list_objects_v2(**request_params)
+
+                if 'Contents' in response:
+                    batch_objects = [obj['Key'] for obj in response['Contents']]
+                    all_objects.extend(batch_objects)
+
+                # Check if there are more objects to retrieve
+                if response.get('IsTruncated', False) and 'NextContinuationToken' in response:
+                    continuation_token = response['NextContinuationToken']
+                else:
+                    break
+
+            return all_objects
 
         except ClientError as e:
             logger.error(f"Error listing objects with prefix '{prefix}': {str(e)}")

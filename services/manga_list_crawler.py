@@ -476,3 +476,460 @@ class MangaListCrawler:
                     "total_images": 0
                 }
             }
+
+    async def get_all_crawled_manga(self, image_type: str = "local") -> dict:
+        """
+        Get all manga that have been crawled and stored
+
+        Args:
+            image_type: Storage type ("local" or "cloud")
+
+        Returns:
+            Dictionary containing all crawled manga information
+        """
+        try:
+            print(f"🔍 Getting all crawled manga for image_type: {image_type}")
+
+            if image_type == "local":
+                return await self._get_all_local_manga()
+            else:
+                return await self._get_all_cloud_manga()
+
+        except Exception as e:
+            print(f"❌ Error getting all crawled manga: {str(e)}")
+            return {
+                "image_type": image_type,
+                "error": str(e),
+                "total_manga": 0,
+                "manga_list": []
+            }
+
+    async def _get_all_local_manga(self) -> dict:
+        """Get all manga stored locally"""
+        try:
+            downloads_folder = "downloads"
+            if not os.path.exists(downloads_folder):
+                return {
+                    "image_type": "local",
+                    "total_manga": 0,
+                    "manga_list": []
+                }
+
+            manga_list = []
+
+            # Scan downloads folder for manga directories
+            for item in os.listdir(downloads_folder):
+                manga_folder = os.path.join(downloads_folder, item)
+
+                if os.path.isdir(manga_folder):
+                    # Check if this is a manga folder (has chapters or metadata)
+                    metadata_file = os.path.join(manga_folder, "manga_metadata.json")
+                    has_chapters = any(
+                        os.path.isdir(os.path.join(manga_folder, d))
+                        for d in os.listdir(manga_folder)
+                        if d.startswith("Chapter_")
+                    )
+
+                    if os.path.exists(metadata_file) or has_chapters:
+                        # Get progress for this manga
+                        progress = await self.existence_checker.get_manga_progress(manga_folder, "local")
+
+                        manga_info = {
+                            "manga_title": item,
+                            "manga_folder": manga_folder,
+                            "progress": progress,
+                            "has_metadata": os.path.exists(metadata_file),
+                            "has_chapters": has_chapters
+                        }
+
+                        manga_list.append(manga_info)
+
+            # Sort by manga title
+            manga_list.sort(key=lambda x: x["manga_title"])
+
+            # Calculate totals
+            total_chapters = sum(m.get("progress", {}).get("total_chapters", 0) for m in manga_list)
+            total_images = sum(m.get("progress", {}).get("total_images", 0) for m in manga_list)
+
+            return {
+                "image_type": "local",
+                "total_manga": len(manga_list),
+                "total_chapters": total_chapters,
+                "total_images": total_images,
+                "manga_list": manga_list
+            }
+
+        except Exception as e:
+            print(f"❌ Error getting local manga: {str(e)}")
+            return {
+                "image_type": "local",
+                "error": str(e),
+                "total_manga": 0,
+                "manga_list": []
+            }
+
+    async def _get_all_cloud_manga(self) -> dict:
+        """Get all manga stored in cloud storage"""
+        try:
+            if not self.existence_checker.wasabi_service:
+                success = await self.existence_checker.initialize_wasabi()
+                if not success:
+                    return {
+                        "image_type": "cloud",
+                        "error": "Wasabi service not available",
+                        "total_manga": 0,
+                        "manga_list": []
+                    }
+
+            print(f"🔍 Scanning cloud storage for all manga...")
+
+            # Get all objects with pagination to ensure we get everything
+            all_objects = []
+            continuation_token = None
+            max_keys_per_request = 1000  # Maximum allowed by S3
+
+            while True:
+                try:
+                    # List objects with pagination
+                    if continuation_token:
+                        response = self.existence_checker.wasabi_service.s3_client.list_objects_v2(
+                            Bucket=self.existence_checker.wasabi_service.bucket_name,
+                            MaxKeys=max_keys_per_request,
+                            ContinuationToken=continuation_token
+                        )
+                    else:
+                        response = self.existence_checker.wasabi_service.s3_client.list_objects_v2(
+                            Bucket=self.existence_checker.wasabi_service.bucket_name,
+                            MaxKeys=max_keys_per_request
+                        )
+
+                    if 'Contents' in response:
+                        batch_objects = [obj['Key'] for obj in response['Contents']]
+                        all_objects.extend(batch_objects)
+                        print(f"   📦 Retrieved {len(batch_objects)} objects (total: {len(all_objects)})")
+
+                    # Check if there are more objects to retrieve
+                    if response.get('IsTruncated', False) and 'NextContinuationToken' in response:
+                        continuation_token = response['NextContinuationToken']
+                    else:
+                        break
+
+                except Exception as e:
+                    print(f"⚠️ Error during pagination: {str(e)}")
+                    break
+
+            print(f"✅ Total objects retrieved: {len(all_objects)}")
+
+            # Group objects by manga
+            manga_groups = {}
+            for obj in all_objects:
+                # Parse object key: manga_title/Chapter_X/image.jpg
+                parts = obj.split('/')
+                if len(parts) >= 3 and parts[1].startswith("Chapter_"):
+                    manga_title = parts[0]
+                    chapter_num = parts[1].replace("Chapter_", "")
+
+                    if manga_title not in manga_groups:
+                        manga_groups[manga_title] = {}
+
+                    if chapter_num not in manga_groups[manga_title]:
+                        manga_groups[manga_title][chapter_num] = []
+
+                    manga_groups[manga_title][chapter_num].append(parts[2])
+
+            print(f"📚 Found {len(manga_groups)} manga in cloud storage")
+
+            # Convert to manga list format
+            manga_list = []
+            total_chapters = 0
+            total_images = 0
+
+            for manga_title, chapters in manga_groups.items():
+                chapter_list = []
+                manga_total_images = 0
+
+                # Sort chapters by number
+                sorted_chapters = sorted(chapters.items(), key=lambda x: float(x[0]) if x[0].replace('.', '').isdigit() else 0)
+
+                for chapter_num, images in sorted_chapters:
+                    # Filter only image files
+                    image_files = [img for img in images if img.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
+                    if image_files:
+                        # Sort images by number
+                        def sort_key(filename):
+                            import re
+                            match = re.search(r'(\d+)', filename)
+                            if match:
+                                return int(match.group(1))
+                            return 0
+
+                        image_files.sort(key=sort_key)
+
+                        chapter_list.append({
+                            "chapter_number": chapter_num,
+                            "images": image_files,
+                            "total_images": len(image_files)
+                        })
+                        manga_total_images += len(image_files)
+
+                if chapter_list:
+                    manga_info = {
+                        "manga_title": manga_title,
+                        "manga_folder": f"cloud://{manga_title}",
+                        "progress": {
+                            "total_chapters": len(chapter_list),
+                            "completed_chapters": len(chapter_list),
+                            "total_images": manga_total_images,
+                            "chapters": {ch["chapter_number"]: ch for ch in chapter_list}
+                        },
+                        "has_metadata": False,  # Cloud doesn't have local metadata files
+                        "has_chapters": len(chapter_list) > 0
+                    }
+
+                    manga_list.append(manga_info)
+                    total_chapters += len(chapter_list)
+                    total_images += manga_total_images
+
+                    print(f"   📖 {manga_title}: {len(chapter_list)} chapters, {manga_total_images} images")
+
+            # Sort by manga title
+            manga_list.sort(key=lambda x: x["manga_title"])
+
+            print(f"🎉 Cloud scan completed: {len(manga_list)} manga, {total_chapters} chapters, {total_images} images")
+
+            return {
+                "image_type": "cloud",
+                "total_manga": len(manga_list),
+                "total_chapters": total_chapters,
+                "total_images": total_images,
+                "manga_list": manga_list
+            }
+
+        except Exception as e:
+            print(f"❌ Error getting cloud manga: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "image_type": "cloud",
+                "error": str(e),
+                "total_manga": 0,
+                "manga_list": []
+            }
+
+    async def get_manga_details(self, manga_title: str, image_type: str = "local") -> dict:
+        """
+        Get detailed information for a specific manga
+
+        Args:
+            manga_title: Title of the manga to get details for
+            image_type: Storage type ("local" or "cloud")
+
+        Returns:
+            Dictionary containing detailed manga information
+        """
+        try:
+            print(f"🔍 Getting details for manga: {manga_title} (image_type: {image_type})")
+
+            if image_type == "local":
+                return await self._get_local_manga_details(manga_title)
+            else:
+                return await self._get_cloud_manga_details(manga_title)
+
+        except Exception as e:
+            print(f"❌ Error getting manga details: {str(e)}")
+            return {
+                "manga_title": manga_title,
+                "image_type": image_type,
+                "error": str(e),
+                "found": False
+            }
+
+    async def _get_local_manga_details(self, manga_title: str) -> dict:
+        """Get detailed information for a manga stored locally"""
+        try:
+            downloads_folder = "downloads"
+            manga_folder = os.path.join(downloads_folder, manga_title)
+
+            if not os.path.exists(manga_folder):
+                return {
+                    "manga_title": manga_title,
+                    "image_type": "local",
+                    "found": False,
+                    "error": "Manga folder not found"
+                }
+
+            # Get progress for this manga
+            progress = await self.existence_checker.get_manga_progress(manga_folder, "local")
+
+            # Get chapter details
+            chapter_details = []
+            chapters_data = progress.get("chapters", {})
+
+            for chapter_num, chapter_info in chapters_data.items():
+                chapter_details.append({
+                    "chapter_number": chapter_num,
+                    "total_images": chapter_info.get("total_images", 0),
+                    "images": chapter_info.get("images", []),
+                    "status": "completed"
+                })
+
+            # Sort chapters by number
+            chapter_details.sort(key=lambda x: float(x["chapter_number"]) if x["chapter_number"].replace('.', '').isdigit() else 0)
+
+            # Get folder information
+            folder_info = {
+                "manga_folder": manga_folder,
+                "has_metadata": os.path.exists(os.path.join(manga_folder, "manga_metadata.json")),
+                "total_size": self._get_folder_size(manga_folder),
+                "created_date": self._get_folder_created_date(manga_folder),
+                "modified_date": self._get_folder_modified_date(manga_folder)
+            }
+
+            return {
+                "manga_title": manga_title,
+                "image_type": "local",
+                "found": True,
+                "progress": progress,
+                "chapter_details": chapter_details,
+                "folder_info": folder_info,
+                "summary": {
+                    "total_chapters": progress.get("total_chapters", 0),
+                    "completed_chapters": progress.get("completed_chapters", 0),
+                    "total_images": progress.get("total_images", 0),
+                    "average_images_per_chapter": progress.get("total_images", 0) / max(progress.get("total_chapters", 1), 1)
+                }
+            }
+
+        except Exception as e:
+            print(f"❌ Error getting local manga details: {str(e)}")
+            return {
+                "manga_title": manga_title,
+                "image_type": "local",
+                "found": False,
+                "error": str(e)
+            }
+
+    async def _get_cloud_manga_details(self, manga_title: str) -> dict:
+        """Get detailed information for a manga stored in cloud storage"""
+        try:
+            if not self.existence_checker.wasabi_service:
+                success = await self.existence_checker.initialize_wasabi()
+                if not success:
+                    return {
+                        "manga_title": manga_title,
+                        "image_type": "cloud",
+                        "found": False,
+                        "error": "Wasabi service not available"
+                    }
+
+            # List all objects for this manga
+            prefix = f"{manga_title}/"
+            all_objects = self.existence_checker.wasabi_service.list_objects(prefix=prefix)
+
+            if not all_objects:
+                return {
+                    "manga_title": manga_title,
+                    "image_type": "cloud",
+                    "found": False,
+                    "error": "Manga not found in cloud storage"
+                }
+
+            # Group objects by chapter
+            chapter_groups = {}
+            for obj in all_objects:
+                parts = obj.split('/')
+                if len(parts) >= 3 and parts[1].startswith("Chapter_"):
+                    chapter_num = parts[1].replace("Chapter_", "")
+                    if chapter_num not in chapter_groups:
+                        chapter_groups[chapter_num] = []
+                    chapter_groups[chapter_num].append(parts[2])
+
+            # Get chapter details
+            chapter_details = []
+            total_images = 0
+
+            # Sort chapters by number
+            sorted_chapters = sorted(chapter_groups.items(), key=lambda x: float(x[0]) if x[0].replace('.', '').isdigit() else 0)
+
+            for chapter_num, images in sorted_chapters:
+                # Filter only image files
+                image_files = [img for img in images if img.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
+
+                # Sort images by number
+                def sort_key(filename):
+                    import re
+                    match = re.search(r'(\d+)', filename)
+                    if match:
+                        return int(match.group(1))
+                    return 0
+
+                image_files.sort(key=sort_key)
+
+                chapter_details.append({
+                    "chapter_number": chapter_num,
+                    "total_images": len(image_files),
+                    "images": image_files,
+                    "status": "completed"
+                })
+
+                total_images += len(image_files)
+
+            # Get cloud storage information
+            cloud_info = {
+                "manga_folder": f"cloud://{manga_title}",
+                "total_objects": len(all_objects),
+                "bucket_name": self.existence_checker.wasabi_service.bucket_name,
+                "endpoint_url": self.existence_checker.wasabi_service.endpoint_url
+            }
+
+            return {
+                "manga_title": manga_title,
+                "image_type": "cloud",
+                "found": True,
+                "chapter_details": chapter_details,
+                "cloud_info": cloud_info,
+                "summary": {
+                    "total_chapters": len(chapter_details),
+                    "completed_chapters": len(chapter_details),
+                    "total_images": total_images,
+                    "average_images_per_chapter": total_images / max(len(chapter_details), 1)
+                }
+            }
+
+        except Exception as e:
+            print(f"❌ Error getting cloud manga details: {str(e)}")
+            return {
+                "manga_title": manga_title,
+                "image_type": "cloud",
+                "found": False,
+                "error": str(e)
+            }
+
+    def _get_folder_size(self, folder_path: str) -> int:
+        """Get total size of a folder in bytes"""
+        try:
+            total_size = 0
+            for dirpath, dirnames, filenames in os.walk(folder_path):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    if os.path.exists(filepath):
+                        total_size += os.path.getsize(filepath)
+            return total_size
+        except Exception:
+            return 0
+
+    def _get_folder_created_date(self, folder_path: str) -> str:
+        """Get folder creation date"""
+        try:
+            stat = os.stat(folder_path)
+            return str(stat.st_ctime)
+        except Exception:
+            return "unknown"
+
+    def _get_folder_modified_date(self, folder_path: str) -> str:
+        """Get folder last modified date"""
+        try:
+            stat = os.stat(folder_path)
+            return str(stat.st_mtime)
+        except Exception:
+            return "unknown"
